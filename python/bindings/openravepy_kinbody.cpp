@@ -336,13 +336,9 @@ public:
         _vanchor = toPyVector3(Vector());
         _vaxes = boost::python::list();
         _vresolution = toPyVector3(Vector(0.02,0.02,0.02));
-        // As for initial values for vel, accel, and jerk, please see kinbodyjoint.cpp's definition.
         _vmaxvel = toPyVector3(Vector(10,10,10));
-        _vhardmaxvel = toPyVector3(Vector(100,100,100));
+        _vhardmaxvel = toPyVector3(Vector(10,10,10));
         _vmaxaccel = toPyVector3(Vector(50,50,50));
-        _vhardmaxaccel = toPyVector3(Vector(1000,1000,1000));
-        _vmaxjerk = toPyVector3(Vector(2e6,2e6,2e6));
-        _vhardmaxjerk = toPyVector3(Vector(2e7, 2e7, 2e7));
         _vmaxtorque = toPyVector3(Vector(1e5,1e5,1e5));
         _vmaxinertia = toPyVector3(Vector(1e5,1e5,1e5));
         _vweights = toPyVector3(Vector(1,1,1));
@@ -369,9 +365,6 @@ public:
         _vmaxvel = toPyArray<dReal,3>(info._vmaxvel);
         _vhardmaxvel = toPyArray<dReal,3>(info._vhardmaxvel);
         _vmaxaccel = toPyArray<dReal,3>(info._vmaxaccel);
-        _vhardmaxaccel = toPyArray<dReal,3>(info._vhardmaxaccel);
-        _vmaxjerk = toPyArray<dReal,3>(info._vmaxjerk);
-        _vhardmaxjerk = toPyArray<dReal,3>(info._vhardmaxjerk);
         _vmaxtorque = toPyArray<dReal,3>(info._vmaxtorque);
         _vmaxinertia = toPyArray<dReal,3>(info._vmaxinertia);
         _vweights = toPyArray<dReal,3>(info._vweights);
@@ -459,24 +452,6 @@ public:
         OPENRAVE_EXCEPTION_FORMAT0(num == info._vmaxaccel.size(), ORE_InvalidState);
         for(size_t i = 0; i < num; ++i) {
             info._vmaxaccel[i] = boost::python::extract<dReal>(_vmaxaccel[i]);
-        }
-
-        num = len(_vhardmaxaccel);
-        OPENRAVE_EXCEPTION_FORMAT0(num == info._vhardmaxaccel.size(), ORE_InvalidState);
-        for(size_t i = 0; i < num; ++i) {
-            info._vhardmaxaccel[i] = boost::python::extract<dReal>(_vhardmaxaccel[i]);
-        }
-
-        num = len(_vmaxjerk);
-        OPENRAVE_EXCEPTION_FORMAT0(num == info._vmaxjerk.size(), ORE_InvalidState);
-        for(size_t i = 0; i < num; ++i) {
-            info._vmaxjerk[i] = boost::python::extract<dReal>(_vmaxjerk[i]);
-        }
-
-        num = len(_vhardmaxjerk);
-        OPENRAVE_EXCEPTION_FORMAT0(num == info._vhardmaxjerk.size(), ORE_InvalidState);
-        for(size_t i = 0; i < num; ++i) {
-            info._vhardmaxjerk[i] = boost::python::extract<dReal>(_vhardmaxjerk[i]);
         }
 
         num = len(_vmaxtorque);
@@ -571,7 +546,7 @@ public:
     KinBody::JointType _type;
     object _name;
     object _linkname0, _linkname1;
-    object _vanchor, _vaxes, _vcurrentvalues, _vresolution, _vmaxvel, _vhardmaxvel, _vmaxaccel, _vhardmaxaccel, _vmaxjerk, _vhardmaxjerk, _vmaxtorque, _vmaxinertia, _vweights, _voffsets, _vlowerlimit, _vupperlimit;
+    object _vanchor, _vaxes, _vcurrentvalues, _vresolution, _vmaxvel, _vhardmaxvel, _vmaxaccel, _vmaxtorque, _vmaxinertia, _vweights, _voffsets, _vlowerlimit, _vupperlimit;
     object _trajfollow;
     PyElectricMotorActuatorInfoPtr _infoElectricMotor;
     boost::python::list _vmimic;
@@ -760,7 +735,7 @@ public:
     }
 
     bool IsParentLink(boost::shared_ptr<PyLink> pylink) const {
-        return _plink->IsParentLink(*pylink->GetLink());
+        return _plink->IsParentLink(pylink->GetLink());
     }
 
     object GetCollisionData() {
@@ -774,11 +749,6 @@ public:
     object ComputeAABB() const {
         return toPyAABB(_plink->ComputeAABB());
     }
-
-    object ComputeAABBFromTransform(object otransform) const {
-        return toPyAABB(_plink->ComputeAABBFromTransform(ExtractTransform(otransform)));
-    }
-
     object GetTransform() const {
         return ReturnTransform(_plink->GetTransform());
     }
@@ -798,23 +768,23 @@ public:
 
     object GetLocalInertia() const {
         TransformMatrix t = _plink->GetLocalInertia();
-        npy_intp dims[] = { 3, 3};
-        PyObject *pyvalues = PyArray_SimpleNew(2,dims, sizeof(dReal)==8 ? PyArray_DOUBLE : PyArray_FLOAT);
-        dReal* pdata = (dReal*)PyArray_DATA(pyvalues);
+        boost::python::tuple shape = boost::python::make_tuple(3, 3);
+        numpy::ndarray pyvalues = numpy::empty(shape, numpy::dtype::get_builtin<dReal>());
+        dReal* pdata = (dReal*) pyvalues.get_data();
         pdata[0] = t.m[0]; pdata[1] = t.m[1]; pdata[2] = t.m[2];
         pdata[3] = t.m[4]; pdata[4] = t.m[5]; pdata[5] = t.m[6];
         pdata[6] = t.m[8]; pdata[7] = t.m[9]; pdata[8] = t.m[10];
-        return static_cast<numeric::array>(handle<>(pyvalues));
+        return std::move(pyvalues);
     }
     object GetGlobalInertia() const {
         TransformMatrix t = _plink->GetGlobalInertia();
-        npy_intp dims[] = { 3, 3};
-        PyObject *pyvalues = PyArray_SimpleNew(2,dims, sizeof(dReal)==8 ? PyArray_DOUBLE : PyArray_FLOAT);
-        dReal* pdata = (dReal*)PyArray_DATA(pyvalues);
+        boost::python::tuple shape = boost::python::make_tuple(3, 3);
+        numpy::ndarray pyvalues = numpy::empty(shape, numpy::dtype::get_builtin<dReal>());
+        dReal* pdata = (dReal*) pyvalues.get_data();
         pdata[0] = t.m[0]; pdata[1] = t.m[1]; pdata[2] = t.m[2];
         pdata[3] = t.m[4]; pdata[4] = t.m[5]; pdata[5] = t.m[6];
         pdata[6] = t.m[8]; pdata[7] = t.m[9]; pdata[8] = t.m[10];
-        return static_cast<numeric::array>(handle<>(pyvalues));
+        return std::move(pyvalues);
     }
     dReal GetMass() const {
         return _plink->GetMass();
@@ -915,9 +885,9 @@ public:
         return links;
     }
 
-    bool IsRigidlyAttached(boost::shared_ptr<PyLink> plink) {
+    bool IsRigidlyAttached(boost::shared_ptr<PyLink>  plink) {
         CHECK_POINTER(plink);
-        return _plink->IsRigidlyAttached(*plink->GetLink());
+        return _plink->IsRigidlyAttached(plink->GetLink());
     }
 
     void SetVelocity(object olinear, object oangular) {
@@ -1040,9 +1010,6 @@ public:
     dReal GetMaxAccel(int iaxis=0) const {
         return _pjoint->GetMaxAccel(iaxis);
     }
-    dReal GetMaxJerk(int iaxis=0) const {
-        return _pjoint->GetMaxJerk(iaxis);
-    }
     dReal GetMaxTorque(int iaxis=0) const {
         return _pjoint->GetMaxTorque(iaxis);
     }
@@ -1153,26 +1120,6 @@ public:
         _pjoint->GetAccelerationLimits(v);
         return toPyArray(v);
     }
-    object GetJerkLimits() const {
-        vector<dReal> v;
-        _pjoint->GetJerkLimits(v);
-        return toPyArray(v);
-    }
-    object GetHardVelocityLimits() const {
-        vector<dReal> v;
-        _pjoint->GetHardVelocityLimits(v);
-        return toPyArray(v);
-    }
-    object GetHardAccelerationLimits() const {
-        vector<dReal> v;
-        _pjoint->GetHardAccelerationLimits(v);
-        return toPyArray(v);
-    }
-    object GetHardJerkLimits() const {
-        vector<dReal> v;
-        _pjoint->GetHardJerkLimits(v);
-        return toPyArray(v);
-    }
     object GetTorqueLimits() const {
         vector<dReal> v;
         _pjoint->GetTorqueLimits(v);
@@ -1206,34 +1153,6 @@ public:
             throw openrave_exception(_("limits are wrong dimensions"));
         }
         _pjoint->SetAccelerationLimits(vmaxlimits);
-    }
-    void SetJerkLimits(object omaxlimits) {
-        vector<dReal> vmaxlimits = ExtractArray<dReal>(omaxlimits);
-        if( (int)vmaxlimits.size() != _pjoint->GetDOF() ) {
-            throw openrave_exception(_("limits are wrong dimensions"));
-        }
-        _pjoint->SetJerkLimits(vmaxlimits);
-    }
-    void SetHardVelocityLimits(object omaxlimits) {
-        vector<dReal> vmaxlimits = ExtractArray<dReal>(omaxlimits);
-        if( (int)vmaxlimits.size() != _pjoint->GetDOF() ) {
-            throw openrave_exception(_("limits are wrong dimensions"));
-        }
-        _pjoint->SetHardVelocityLimits(vmaxlimits);
-    }
-    void SetHardAccelerationLimits(object omaxlimits) {
-        vector<dReal> vmaxlimits = ExtractArray<dReal>(omaxlimits);
-        if( (int)vmaxlimits.size() != _pjoint->GetDOF() ) {
-            throw openrave_exception(_("limits are wrong dimensions"));
-        }
-        _pjoint->SetHardAccelerationLimits(vmaxlimits);
-    }
-    void SetHardJerkLimits(object omaxlimits) {
-        vector<dReal> vmaxlimits = ExtractArray<dReal>(omaxlimits);
-        if( (int)vmaxlimits.size() != _pjoint->GetDOF() ) {
-            throw openrave_exception(_("limits are wrong dimensions"));
-        }
-        _pjoint->SetHardJerkLimits(vmaxlimits);
     }
     void SetTorqueLimits(object omaxlimits) {
         vector<dReal> vmaxlimits = ExtractArray<dReal>(omaxlimits);
@@ -1621,11 +1540,11 @@ object PyKinBody::GetDOFValues() const
 object PyKinBody::GetDOFValues(object oindices) const
 {
     if( IS_PYTHONOBJECT_NONE(oindices) ) {
-        return numeric::array(boost::python::list());
+        return numpy::array(boost::python::list());
     }
     vector<int> vindices = ExtractArray<int>(oindices);
     if( vindices.size() == 0 ) {
-        return numeric::array(boost::python::list());
+        return numpy::array(boost::python::list());
     }
     vector<dReal> values;
     _pbody->GetDOFValues(values,vindices);
@@ -1642,11 +1561,11 @@ object PyKinBody::GetDOFVelocities() const
 object PyKinBody::GetDOFVelocities(object oindices) const
 {
     if( IS_PYTHONOBJECT_NONE(oindices) ) {
-        return numeric::array(boost::python::list());
+        return numpy::array(boost::python::list());
     }
     vector<int> vindices = ExtractArray<int>(oindices);
     if( vindices.size() == 0 ) {
-        return numeric::array(boost::python::list());
+        return numpy::array(boost::python::list());
     }
     vector<dReal> values;
     _pbody->GetDOFVelocities(values,vindices);
@@ -1674,34 +1593,6 @@ object PyKinBody::GetDOFAccelerationLimits() const
     return toPyArray(vmax);
 }
 
-object PyKinBody::GetDOFJerkLimits() const
-{
-    vector<dReal> vmax;
-    _pbody->GetDOFJerkLimits(vmax);
-    return toPyArray(vmax);
-}
-
-object PyKinBody::GetDOFHardVelocityLimits() const
-{
-    vector<dReal> vmax;
-    _pbody->GetDOFHardVelocityLimits(vmax);
-    return toPyArray(vmax);
-}
-
-object PyKinBody::GetDOFHardAccelerationLimits() const
-{
-    vector<dReal> vmax;
-    _pbody->GetDOFHardAccelerationLimits(vmax);
-    return toPyArray(vmax);
-}
-
-object PyKinBody::GetDOFHardJerkLimits() const
-{
-    vector<dReal> vmax;
-    _pbody->GetDOFHardJerkLimits(vmax);
-    return toPyArray(vmax);
-}
-
 object PyKinBody::GetDOFTorqueLimits() const
 {
     vector<dReal> vmax;
@@ -1712,11 +1603,11 @@ object PyKinBody::GetDOFTorqueLimits() const
 object PyKinBody::GetDOFLimits(object oindices) const
 {
     if( IS_PYTHONOBJECT_NONE(oindices) ) {
-        return boost::python::make_tuple(numeric::array(boost::python::list()), numeric::array(boost::python::list())); // always need 2 since users can do lower, upper = GetDOFLimits()
+        return boost::python::make_tuple(numpy::array(boost::python::list()), numpy::array(boost::python::list())); // always need 2 since users can do lower, upper = GetDOFLimits()
     }
     vector<int> vindices = ExtractArray<int>(oindices);
     if( vindices.size() == 0 ) {
-        return boost::python::make_tuple(numeric::array(boost::python::list()), numeric::array(boost::python::list())); // always need 2 since users can do lower, upper = GetDOFLimits()
+        return boost::python::make_tuple(numpy::array(boost::python::list()), numpy::array(boost::python::list())); // always need 2 since users can do lower, upper = GetDOFLimits()
     }
     vector<dReal> vlower, vupper, vtemplower, vtempupper;
     vlower.reserve(vindices.size());
@@ -1733,11 +1624,11 @@ object PyKinBody::GetDOFLimits(object oindices) const
 object PyKinBody::GetDOFVelocityLimits(object oindices) const
 {
     if( IS_PYTHONOBJECT_NONE(oindices) ) {
-        return numeric::array(boost::python::list());
+        return numpy::array(boost::python::list());
     }
     vector<int> vindices = ExtractArray<int>(oindices);
     if( vindices.size() == 0 ) {
-        return numeric::array(boost::python::list());
+        return numpy::array(boost::python::list());
     }
     vector<dReal> vmax, vtempmax;
     vmax.reserve(vindices.size());
@@ -1752,11 +1643,11 @@ object PyKinBody::GetDOFVelocityLimits(object oindices) const
 object PyKinBody::GetDOFAccelerationLimits(object oindices) const
 {
     if( IS_PYTHONOBJECT_NONE(oindices) ) {
-        return numeric::array(boost::python::list());
+        return numpy::array(boost::python::list());
     }
     vector<int> vindices = ExtractArray<int>(oindices);
     if( vindices.size() == 0 ) {
-        return numeric::array(boost::python::list());
+        return numpy::array(boost::python::list());
     }
     vector<dReal> vmax, vtempmax;
     vmax.reserve(vindices.size());
@@ -1768,90 +1659,14 @@ object PyKinBody::GetDOFAccelerationLimits(object oindices) const
     return toPyArray(vmax);
 }
 
-object PyKinBody::GetDOFJerkLimits(object oindices) const
-{
-    if( IS_PYTHONOBJECT_NONE(oindices) ) {
-        return numeric::array(boost::python::list());
-    }
-    vector<int> vindices = ExtractArray<int>(oindices);
-    if( vindices.size() == 0 ) {
-        return numeric::array(boost::python::list());
-    }
-    vector<dReal> vmax, vtempmax;
-    vmax.reserve(vindices.size());
-    FOREACHC(it, vindices) {
-        KinBody::JointPtr pjoint = _pbody->GetJointFromDOFIndex(*it);
-        pjoint->GetJerkLimits(vtempmax,false);
-        vmax.push_back(vtempmax.at(*it-pjoint->GetDOFIndex()));
-    }
-    return toPyArray(vmax);
-}
-
-object PyKinBody::GetDOFHardVelocityLimits(object oindices) const
-{
-    if( IS_PYTHONOBJECT_NONE(oindices) ) {
-        return numeric::array(boost::python::list());
-    }
-    vector<int> vindices = ExtractArray<int>(oindices);
-    if( vindices.size() == 0 ) {
-        return numeric::array(boost::python::list());
-    }
-    vector<dReal> vmax, vtempmax;
-    vmax.reserve(vindices.size());
-    FOREACHC(it, vindices) {
-        KinBody::JointPtr pjoint = _pbody->GetJointFromDOFIndex(*it);
-        pjoint->GetHardVelocityLimits(vtempmax,false);
-        vmax.push_back(vtempmax.at(*it-pjoint->GetDOFIndex()));
-    }
-    return toPyArray(vmax);
-}
-
-object PyKinBody::GetDOFHardAccelerationLimits(object oindices) const
-{
-    if( IS_PYTHONOBJECT_NONE(oindices) ) {
-        return numeric::array(boost::python::list());
-    }
-    vector<int> vindices = ExtractArray<int>(oindices);
-    if( vindices.size() == 0 ) {
-        return numeric::array(boost::python::list());
-    }
-    vector<dReal> vmax, vtempmax;
-    vmax.reserve(vindices.size());
-    FOREACHC(it, vindices) {
-        KinBody::JointPtr pjoint = _pbody->GetJointFromDOFIndex(*it);
-        pjoint->GetHardAccelerationLimits(vtempmax,false);
-        vmax.push_back(vtempmax.at(*it-pjoint->GetDOFIndex()));
-    }
-    return toPyArray(vmax);
-}
-
-object PyKinBody::GetDOFHardJerkLimits(object oindices) const
-{
-    if( IS_PYTHONOBJECT_NONE(oindices) ) {
-        return numeric::array(boost::python::list());
-    }
-    vector<int> vindices = ExtractArray<int>(oindices);
-    if( vindices.size() == 0 ) {
-        return numeric::array(boost::python::list());
-    }
-    vector<dReal> vmax, vtempmax;
-    vmax.reserve(vindices.size());
-    FOREACHC(it, vindices) {
-        KinBody::JointPtr pjoint = _pbody->GetJointFromDOFIndex(*it);
-        pjoint->GetHardJerkLimits(vtempmax,false);
-        vmax.push_back(vtempmax.at(*it-pjoint->GetDOFIndex()));
-    }
-    return toPyArray(vmax);
-}
-
 object PyKinBody::GetDOFTorqueLimits(object oindices) const
 {
     if( IS_PYTHONOBJECT_NONE(oindices) ) {
-        return numeric::array(boost::python::list());
+        return numpy::array(boost::python::list());
     }
     vector<int> vindices = ExtractArray<int>(oindices);
     if( vindices.size() == 0 ) {
-        return numeric::array(boost::python::list());
+        return numpy::array(boost::python::list());
     }
     vector<dReal> vmax, vtempmax;
     vmax.reserve(vindices.size());
@@ -1894,11 +1709,11 @@ object PyKinBody::GetDOFWeights() const
 object PyKinBody::GetDOFWeights(object oindices) const
 {
     if( IS_PYTHONOBJECT_NONE(oindices) ) {
-        return numeric::array(boost::python::list());
+        return numpy::array(boost::python::list());
     }
     vector<int> vindices = ExtractArray<int>(oindices);
     if( vindices.size() == 0 ) {
-        return numeric::array(boost::python::list());
+        return numpy::array(boost::python::list());
     }
     vector<dReal> values, v;
     values.reserve(vindices.size());
@@ -1919,11 +1734,11 @@ object PyKinBody::GetDOFResolutions() const
 object PyKinBody::GetDOFResolutions(object oindices) const
 {
     if( IS_PYTHONOBJECT_NONE(oindices) ) {
-        return numeric::array(boost::python::list());
+        return numpy::array(boost::python::list());
     }
     vector<int> vindices = ExtractArray<int>(oindices);
     if( vindices.size() == 0 ) {
-        return numeric::array(boost::python::list());
+        return numpy::array(boost::python::list());
     }
     vector<dReal> values, v;
     values.reserve(vindices.size());
@@ -2181,14 +1996,14 @@ void PyKinBody::SetDOFVelocities(object odofvelocities, uint32_t checklimits, ob
 object PyKinBody::GetLinkVelocities() const
 {
     if( _pbody->GetLinks().size() == 0 ) {
-        return numeric::array(boost::python::list());
+        return numpy::array(boost::python::list());
     }
     std::vector<std::pair<Vector,Vector> > velocities;
     _pbody->GetLinkVelocities(velocities);
 
-    npy_intp dims[] = {npy_intp(velocities.size()),npy_intp(6)};
-    PyObject *pyvel = PyArray_SimpleNew(2,dims, sizeof(dReal)==8 ? PyArray_DOUBLE : PyArray_FLOAT);
-    dReal* pfvel = (dReal*)PyArray_DATA(pyvel);
+    boost::python::tuple shape = boost::python::make_tuple(velocities.size(), 6);
+    numpy::ndarray pyvel = numpy::empty(shape, numpy::dtype::get_builtin<dReal>());
+    dReal* pfvel = (dReal*) pyvel.get_data();
     for(size_t i = 0; i < velocities.size(); ++i) {
         pfvel[6*i+0] = velocities[i].first.x;
         pfvel[6*i+1] = velocities[i].first.y;
@@ -2197,13 +2012,13 @@ object PyKinBody::GetLinkVelocities() const
         pfvel[6*i+4] = velocities[i].second.y;
         pfvel[6*i+5] = velocities[i].second.z;
     }
-    return static_cast<numeric::array>(handle<>(pyvel));
+    return std::move(pyvel);
 }
 
 object PyKinBody::GetLinkAccelerations(object odofaccelerations, object oexternalaccelerations=object()) const
 {
     if( _pbody->GetLinks().size() == 0 ) {
-        return numeric::array(boost::python::list());
+        return numpy::array(boost::python::list());
     }
     vector<dReal> vDOFAccelerations = ExtractArray<dReal>(odofaccelerations);
     KinBody::AccelerationMapPtr pmapExternalAccelerations;
@@ -2223,9 +2038,9 @@ object PyKinBody::GetLinkAccelerations(object odofaccelerations, object oexterna
     std::vector<std::pair<Vector,Vector> > vLinkAccelerations;
     _pbody->GetLinkAccelerations(vDOFAccelerations, vLinkAccelerations, pmapExternalAccelerations);
 
-    npy_intp dims[] = {npy_intp(vLinkAccelerations.size()),npy_intp(6)};
-    PyObject *pyaccel = PyArray_SimpleNew(2,dims, sizeof(dReal)==8 ? PyArray_DOUBLE : PyArray_FLOAT);
-    dReal* pf = (dReal*)PyArray_DATA(pyaccel);
+    boost::python::tuple shape = boost::python::make_tuple(vLinkAccelerations.size(), 6);
+    numpy::ndarray pyaccel = numpy::empty(shape, numpy::dtype::get_builtin<dReal>());
+    dReal* pf = (dReal*) pyaccel.get_data();
     for(size_t i = 0; i < vLinkAccelerations.size(); ++i) {
         pf[6*i+0] = vLinkAccelerations[i].first.x;
         pf[6*i+1] = vLinkAccelerations[i].first.y;
@@ -2234,22 +2049,12 @@ object PyKinBody::GetLinkAccelerations(object odofaccelerations, object oexterna
         pf[6*i+4] = vLinkAccelerations[i].second.y;
         pf[6*i+5] = vLinkAccelerations[i].second.z;
     }
-    return static_cast<numeric::array>(handle<>(pyaccel));
+    return std::move(pyaccel);
 }
 
-object PyKinBody::ComputeAABB(bool bEnabledOnlyLinks)
+object PyKinBody::ComputeAABB()
 {
-    return toPyAABB(_pbody->ComputeAABB(bEnabledOnlyLinks));
-}
-
-object PyKinBody::ComputeAABBFromTransform(object otransform, bool bEnabledOnlyLinks)
-{
-    return toPyAABB(_pbody->ComputeAABBFromTransform(ExtractTransform(otransform), bEnabledOnlyLinks));
-}
-
-object PyKinBody::ComputeLocalAABB(bool bEnabledOnlyLinks)
-{
-    return toPyAABB(_pbody->ComputeLocalAABB(bEnabledOnlyLinks));
+    return toPyAABB(_pbody->ComputeAABB());
 }
 
 object PyKinBody::GetCenterOfMass() const
@@ -2358,54 +2163,6 @@ void PyKinBody::SetDOFAccelerationLimits(object o)
     _pbody->SetDOFAccelerationLimits(values);
 }
 
-void PyKinBody::SetDOFJerkLimits(object o)
-{
-    if( _pbody->GetDOF() == 0 ) {
-        return;
-    }
-    vector<dReal> values = ExtractArray<dReal>(o);
-    if( (int)values.size() != GetDOF() ) {
-        throw openrave_exception(_("values do not equal to body degrees of freedom"));
-    }
-    _pbody->SetDOFJerkLimits(values);
-}
-
-void PyKinBody::SetDOFHardVelocityLimits(object o)
-{
-    if( _pbody->GetDOF() == 0 ) {
-        return;
-    }
-    vector<dReal> values = ExtractArray<dReal>(o);
-    if( (int)values.size() != GetDOF() ) {
-        throw openrave_exception(_("values do not equal to body degrees of freedom"));
-    }
-    _pbody->SetDOFHardVelocityLimits(values);
-}
-
-void PyKinBody::SetDOFHardAccelerationLimits(object o)
-{
-    if( _pbody->GetDOF() == 0 ) {
-        return;
-    }
-    vector<dReal> values = ExtractArray<dReal>(o);
-    if( (int)values.size() != GetDOF() ) {
-        throw openrave_exception(_("values do not equal to body degrees of freedom"));
-    }
-    _pbody->SetDOFHardAccelerationLimits(values);
-}
-
-void PyKinBody::SetDOFHardJerkLimits(object o)
-{
-    if( _pbody->GetDOF() == 0 ) {
-        return;
-    }
-    vector<dReal> values = ExtractArray<dReal>(o);
-    if( (int)values.size() != GetDOF() ) {
-        throw openrave_exception(_("values do not equal to body degrees of freedom"));
-    }
-    _pbody->SetDOFHardJerkLimits(values);
-}
-
 void PyKinBody::SetDOFTorqueLimits(object o)
 {
     if( _pbody->GetDOF() == 0 ) {
@@ -2499,7 +2256,7 @@ object PyKinBody::ComputeJacobianTranslation(int index, object oposition, object
     }
     std::vector<dReal> vjacobian;
     _pbody->ComputeJacobianTranslation(index,ExtractVector3(oposition),vjacobian,vindices);
-    std::vector<npy_intp> dims(2); dims[0] = 3; dims[1] = vjacobian.size()/3;
+    std::vector<size_t> dims(2); dims[0] = 3; dims[1] = vjacobian.size()/3;
     return toPyArray(vjacobian,dims);
 }
 
@@ -2511,7 +2268,7 @@ object PyKinBody::ComputeJacobianAxisAngle(int index, object oindices)
     }
     std::vector<dReal> vjacobian;
     _pbody->ComputeJacobianAxisAngle(index,vjacobian,vindices);
-    std::vector<npy_intp> dims(2); dims[0] = 3; dims[1] = vjacobian.size()/3;
+    std::vector<size_t> dims(2); dims[0] = 3; dims[1] = vjacobian.size()/3;
     return toPyArray(vjacobian,dims);
 }
 
@@ -2519,7 +2276,7 @@ object PyKinBody::CalculateJacobian(int index, object oposition)
 {
     std::vector<dReal> vjacobian;
     _pbody->CalculateJacobian(index,ExtractVector3(oposition),vjacobian);
-    std::vector<npy_intp> dims(2); dims[0] = 3; dims[1] = vjacobian.size()/3;
+    std::vector<size_t> dims(2); dims[0] = 3; dims[1] = vjacobian.size()/3;
     return toPyArray(vjacobian,dims);
 }
 
@@ -2527,7 +2284,7 @@ object PyKinBody::CalculateRotationJacobian(int index, object q) const
 {
     std::vector<dReal> vjacobian;
     _pbody->CalculateRotationJacobian(index,ExtractVector4(q),vjacobian);
-    std::vector<npy_intp> dims(2); dims[0] = 4; dims[1] = _pbody->GetDOF();
+    std::vector<size_t> dims(2); dims[0] = 4; dims[1] = _pbody->GetDOF();
     return toPyArray(vjacobian,dims);
 }
 
@@ -2535,7 +2292,7 @@ object PyKinBody::CalculateAngularVelocityJacobian(int index) const
 {
     std::vector<dReal> vjacobian;
     _pbody->ComputeJacobianAxisAngle(index,vjacobian);
-    std::vector<npy_intp> dims(2); dims[0] = 3; dims[1] = _pbody->GetDOF();
+    std::vector<size_t> dims(2); dims[0] = 3; dims[1] = _pbody->GetDOF();
     return toPyArray(vjacobian,dims);
 }
 
@@ -2548,7 +2305,7 @@ object PyKinBody::ComputeHessianTranslation(int index, object oposition, object 
     size_t dof = vindices.size() == 0 ? (size_t)_pbody->GetDOF() : vindices.size();
     std::vector<dReal> vhessian;
     _pbody->ComputeHessianTranslation(index,ExtractVector3(oposition),vhessian,vindices);
-    std::vector<npy_intp> dims(3); dims[0] = dof; dims[1] = 3; dims[2] = dof;
+    std::vector<size_t> dims(3); dims[0] = dof; dims[1] = 3; dims[2] = dof;
     return toPyArray(vhessian,dims);
 }
 
@@ -2561,7 +2318,7 @@ object PyKinBody::ComputeHessianAxisAngle(int index, object oindices)
     size_t dof = vindices.size() == 0 ? (size_t)_pbody->GetDOF() : vindices.size();
     std::vector<dReal> vhessian;
     _pbody->ComputeHessianAxisAngle(index,vhessian,vindices);
-    std::vector<npy_intp> dims(3); dims[0] = dof; dims[1] = 3; dims[2] = dof;
+    std::vector<size_t> dims(3); dims[0] = dof; dims[1] = 3; dims[2] = dof;
     return toPyArray(vhessian,dims);
 }
 
@@ -2615,7 +2372,7 @@ bool PyKinBody::CheckSelfCollision(PyCollisionReportPtr pReport, PyCollisionChec
 bool PyKinBody::IsAttached(PyKinBodyPtr pattachbody)
 {
     CHECK_POINTER(pattachbody);
-    return _pbody->IsAttached(*pattachbody->GetBody());
+    return _pbody->IsAttached(pattachbody->GetBody());
 }
 object PyKinBody::GetAttached() const
 {
@@ -2659,81 +2416,6 @@ object PyKinBody::GetConfigurationValues() const
     vector<dReal> values;
     _pbody->GetConfigurationValues(values);
     return toPyArray(values);
-}
-
-
-bool PyKinBody::Grab(PyKinBodyPtr pbody, object pylink, object linkstoignore)
-{
-    CHECK_POINTER(pbody);
-    CHECK_POINTER(pylink);
-    std::set<int> setlinkstoignore = ExtractSet<int>(linkstoignore);
-    return _pbody->Grab(pbody->GetBody(), GetKinBodyLink(pylink), setlinkstoignore);
-}
-
-bool PyKinBody::Grab(PyKinBodyPtr pbody, object pylink)
-{
-    CHECK_POINTER(pbody);
-    CHECK_POINTER(pylink);
-    KinBody::LinkPtr plink = GetKinBodyLink(pylink);
-    return _pbody->Grab(pbody->GetBody(), plink);
-}
-
-void PyKinBody::Release(PyKinBodyPtr pbody)
-{
-    CHECK_POINTER(pbody); _pbody->Release(*pbody->GetBody());
-}
-void PyKinBody::ReleaseAllGrabbed() {
-    _pbody->ReleaseAllGrabbed();
-}
-void PyKinBody::ReleaseAllGrabbedWithLink(object pylink) {
-    CHECK_POINTER(pylink);
-    KinBody::LinkPtr plink = GetKinBodyLink(pylink);
-    _pbody->ReleaseAllGrabbedWithLink(*plink);
-}
-void PyKinBody::RegrabAll()
-{
-    _pbody->RegrabAll();
-}
-object PyKinBody::IsGrabbing(PyKinBodyPtr pbody) const
-{
-    CHECK_POINTER(pbody);
-    KinBody::LinkPtr plink = _pbody->IsGrabbing(*pbody->GetBody());
-    return toPyKinBodyLink(plink,_pyenv);
-}
-
-object PyKinBody::GetGrabbed() const
-{
-    boost::python::list bodies;
-    std::vector<KinBodyPtr> vbodies;
-    _pbody->GetGrabbed(vbodies);
-    FOREACH(itbody, vbodies) {
-        bodies.append(PyKinBodyPtr(new PyKinBody(*itbody,_pyenv)));
-    }
-    return bodies;
-}
-
-object PyKinBody::GetGrabbedInfo() const
-{
-    boost::python::list ograbbed;
-    std::vector<RobotBase::GrabbedInfoPtr> vgrabbedinfo;
-    _pbody->GetGrabbedInfo(vgrabbedinfo);
-    FOREACH(itgrabbed, vgrabbedinfo) {
-        ograbbed.append(PyGrabbedInfoPtr(new PyGrabbedInfo(**itgrabbed)));
-    }
-    return ograbbed;
-}
-
-void PyKinBody::ResetGrabbed(object ograbbedinfos)
-{
-    std::vector<RobotBase::GrabbedInfoConstPtr> vgrabbedinfos(len(ograbbedinfos));
-    for(size_t i = 0; i < vgrabbedinfos.size(); ++i) {
-        PyGrabbedInfoPtr pygrabbed = boost::python::extract<PyGrabbedInfoPtr>(ograbbedinfos[i]);
-        if( !pygrabbed ) {
-            throw OPENRAVE_EXCEPTION_FORMAT0(_("cannot cast to Robot.GrabbedInfo"),ORE_InvalidArguments);
-        }
-        vgrabbedinfos[i] = pygrabbed->GetGrabbedInfo();
-    }
-    _pbody->ResetGrabbed(vgrabbedinfos);
 }
 
 bool PyKinBody::IsRobot() const
@@ -3104,7 +2786,7 @@ class JointInfo_pickle_suite : public pickle_suite
 public:
     static boost::python::tuple getstate(const PyJointInfo& r)
     {
-        return boost::python::make_tuple(boost::python::make_tuple((int)r._type, r._name, r._linkname0, r._linkname1, r._vanchor, r._vaxes, r._vcurrentvalues), boost::python::make_tuple(r._vresolution, r._vmaxvel, r._vhardmaxvel, r._vmaxaccel, r._vmaxtorque, r._vweights, r._voffsets, r._vlowerlimit, r._vupperlimit), boost::python::make_tuple(r._trajfollow, r._vmimic, r._mapFloatParameters, r._mapIntParameters, r._bIsCircular, r._bIsActive, r._mapStringParameters, r._infoElectricMotor, r._vmaxinertia, r._vmaxjerk, r._vhardmaxaccel, r._vhardmaxjerk));
+        return boost::python::make_tuple(boost::python::make_tuple((int)r._type, r._name, r._linkname0, r._linkname1, r._vanchor, r._vaxes, r._vcurrentvalues), boost::python::make_tuple(r._vresolution, r._vmaxvel, r._vhardmaxvel, r._vmaxaccel, r._vmaxtorque, r._vweights, r._voffsets, r._vlowerlimit, r._vupperlimit), boost::python::make_tuple(r._trajfollow, r._vmimic, r._mapFloatParameters, r._mapIntParameters, r._bIsCircular, r._bIsActive, r._mapStringParameters, r._infoElectricMotor, r._vmaxinertia));
     }
     static void setstate(PyJointInfo& r, boost::python::tuple state) {
         r._type = (KinBody::JointType)(int)boost::python::extract<int>(state[0][0]);
@@ -3136,33 +2818,9 @@ public:
                 r._infoElectricMotor = boost::python::extract<PyElectricMotorActuatorInfoPtr>(state[2][7]);
                 if( num2 > 8 ) {
                     r._vmaxinertia = state[2][8];
-                    if( num2 > 9 ) {
-                        r._vmaxjerk = state[2][9];
-                        if( num2 > 10 ) {
-                            r._vhardmaxaccel = state[2][10];
-                            if( num2 > 11 ) {
-                                r._vhardmaxjerk = state[2][11];
-                            }
-                        }
-                    }
                 }
             }
         }
-    }
-};
-
-class GrabbedInfo_pickle_suite : public pickle_suite
-{
-public:
-    static boost::python::tuple getstate(const PyKinBody::PyGrabbedInfo& r)
-    {
-        return boost::python::make_tuple(r._grabbedname, r._robotlinkname, r._trelative, r._setRobotLinksToIgnore);
-    }
-    static void setstate(PyKinBody::PyGrabbedInfo& r, boost::python::tuple state) {
-        r._grabbedname = state[0];
-        r._robotlinkname = state[1];
-        r._trelative = state[2];
-        r._setRobotLinksToIgnore = state[3];
     }
 };
 
@@ -3177,7 +2835,6 @@ BOOST_PYTHON_MEMBER_FUNCTION_OVERLOADS(GetWrapOffset_overloads, GetWrapOffset, 0
 BOOST_PYTHON_MEMBER_FUNCTION_OVERLOADS(SetWrapOffset_overloads, SetWrapOffset, 1, 2)
 BOOST_PYTHON_MEMBER_FUNCTION_OVERLOADS(GetMaxVel_overloads, GetMaxVel, 0, 1)
 BOOST_PYTHON_MEMBER_FUNCTION_OVERLOADS(GetMaxAccel_overloads, GetMaxAccel, 0, 1)
-BOOST_PYTHON_MEMBER_FUNCTION_OVERLOADS(GetMaxJerk_overloads, GetMaxJerk, 0, 1)
 BOOST_PYTHON_MEMBER_FUNCTION_OVERLOADS(GetMaxTorque_overloads, GetMaxTorque, 0, 1)
 BOOST_PYTHON_MEMBER_FUNCTION_OVERLOADS(GetInstantaneousTorqueLimits_overloads, GetInstantaneousTorqueLimits, 0, 1)
 BOOST_PYTHON_MEMBER_FUNCTION_OVERLOADS(GetNominalTorqueLimits_overloads, GetNominalTorqueLimits, 0, 1)
@@ -3205,9 +2862,6 @@ BOOST_PYTHON_MEMBER_FUNCTION_OVERLOADS(InitFromSpheres_overloads, InitFromSphere
 BOOST_PYTHON_MEMBER_FUNCTION_OVERLOADS(InitFromTrimesh_overloads, InitFromTrimesh, 1, 3)
 BOOST_PYTHON_MEMBER_FUNCTION_OVERLOADS(InitFromGeometries_overloads, InitFromGeometries, 1, 2)
 BOOST_PYTHON_MEMBER_FUNCTION_OVERLOADS(Init_overloads, Init, 2, 3)
-BOOST_PYTHON_MEMBER_FUNCTION_OVERLOADS(ComputeAABB_overloads, ComputeAABB, 0, 1)
-BOOST_PYTHON_MEMBER_FUNCTION_OVERLOADS(ComputeAABBFromTransform_overloads, ComputeAABBFromTransform, 1, 2)
-BOOST_PYTHON_MEMBER_FUNCTION_OVERLOADS(ComputeLocalAABB_overloads, ComputeLocalAABB, 0, 1)
 
 void init_openravepy_kinbody()
 {
@@ -3314,9 +2968,6 @@ void init_openravepy_kinbody()
                        .def_readwrite("_vmaxvel",&PyJointInfo::_vmaxvel)
                        .def_readwrite("_vhardmaxvel",&PyJointInfo::_vhardmaxvel)
                        .def_readwrite("_vmaxaccel",&PyJointInfo::_vmaxaccel)
-                       .def_readwrite("_vhardmaxaccel",&PyJointInfo::_vhardmaxaccel)
-                       .def_readwrite("_vmaxjerk",&PyJointInfo::_vmaxjerk)
-                       .def_readwrite("_vhardmaxjerk",&PyJointInfo::_vhardmaxjerk)
                        .def_readwrite("_vmaxtorque",&PyJointInfo::_vmaxtorque)
                        .def_readwrite("_vmaxinertia",&PyJointInfo::_vmaxinertia)
                        .def_readwrite("_vweights",&PyJointInfo::_vweights)
@@ -3333,17 +2984,6 @@ void init_openravepy_kinbody()
                        .def_readwrite("_infoElectricMotor", &PyJointInfo::_infoElectricMotor)
                        .def_pickle(JointInfo_pickle_suite())
     ;
-
-    object grabbedinfo = class_<PyKinBody::PyGrabbedInfo, boost::shared_ptr<PyKinBody::PyGrabbedInfo> >("GrabbedInfo", DOXY_CLASS(KinBody::GrabbedInfo))
-                         .def_readwrite("_grabbedname",&PyKinBody::PyGrabbedInfo::_grabbedname)
-                         .def_readwrite("_robotlinkname",&PyKinBody::PyGrabbedInfo::_robotlinkname)
-                         .def_readwrite("_trelative",&PyKinBody::PyGrabbedInfo::_trelative)
-                         .def_readwrite("_setRobotLinksToIgnore",&PyKinBody::PyGrabbedInfo::_setRobotLinksToIgnore)
-                         .def("__str__",&PyKinBody::PyGrabbedInfo::__str__)
-                         .def("__unicode__",&PyKinBody::PyGrabbedInfo::__unicode__)
-                         .def_pickle(GrabbedInfo_pickle_suite())
-    ;
-
 
     {
         void (PyKinBody::*psetdofvalues1)(object) = &PyKinBody::SetDOFValues;
@@ -3363,14 +3003,6 @@ void init_openravepy_kinbody()
         object (PyKinBody::*getdofvelocitylimits2)(object) const = &PyKinBody::GetDOFVelocityLimits;
         object (PyKinBody::*getdofaccelerationlimits1)() const = &PyKinBody::GetDOFAccelerationLimits;
         object (PyKinBody::*getdofaccelerationlimits2)(object) const = &PyKinBody::GetDOFAccelerationLimits;
-        object (PyKinBody::*getdofjerklimits1)() const = &PyKinBody::GetDOFJerkLimits;
-        object (PyKinBody::*getdofjerklimits2)(object) const = &PyKinBody::GetDOFJerkLimits;
-        object (PyKinBody::*getdofhardvelocitylimits1)() const = &PyKinBody::GetDOFHardVelocityLimits;
-        object (PyKinBody::*getdofhardvelocitylimits2)(object) const = &PyKinBody::GetDOFHardVelocityLimits;
-        object (PyKinBody::*getdofhardaccelerationlimits1)() const = &PyKinBody::GetDOFHardAccelerationLimits;
-        object (PyKinBody::*getdofhardaccelerationlimits2)(object) const = &PyKinBody::GetDOFHardAccelerationLimits;
-        object (PyKinBody::*getdofhardjerklimits1)() const = &PyKinBody::GetDOFHardJerkLimits;
-        object (PyKinBody::*getdofhardjerklimits2)(object) const = &PyKinBody::GetDOFHardJerkLimits;
         object (PyKinBody::*getdoftorquelimits1)() const = &PyKinBody::GetDOFTorqueLimits;
         object (PyKinBody::*getdoftorquelimits2)(object) const = &PyKinBody::GetDOFTorqueLimits;
         object (PyKinBody::*getlinks1)() const = &PyKinBody::GetLinks;
@@ -3381,8 +3013,6 @@ void init_openravepy_kinbody()
         void (PyKinBody::*setdofvelocities2)(object,object,object) = &PyKinBody::SetDOFVelocities;
         void (PyKinBody::*setdofvelocities3)(object,uint32_t,object) = &PyKinBody::SetDOFVelocities;
         void (PyKinBody::*setdofvelocities4)(object,object,object,uint32_t) = &PyKinBody::SetDOFVelocities;
-        bool (PyKinBody::*pgrab2)(PyKinBodyPtr,object) = &PyKinBody::Grab;
-        bool (PyKinBody::*pgrab4)(PyKinBodyPtr,object,object) = &PyKinBody::Grab;
         object (PyKinBody::*GetNonAdjacentLinks1)() const = &PyKinBody::GetNonAdjacentLinks;
         object (PyKinBody::*GetNonAdjacentLinks2)(int) const = &PyKinBody::GetNonAdjacentLinks;
         std::string sInitFromBoxesDoc = std::string(DOXY_FN(KinBody,InitFromBoxes "const std::vector< AABB; bool")) + std::string("\nboxes is a Nx6 array, first 3 columsn are position, last 3 are extents");
@@ -3410,14 +3040,6 @@ void init_openravepy_kinbody()
                         .def("GetDOFVelocityLimits",getdofvelocitylimits2, args("indices"),DOXY_FN(KinBody,GetDOFVelocityLimits))
                         .def("GetDOFAccelerationLimits",getdofaccelerationlimits1, DOXY_FN(KinBody,GetDOFAccelerationLimits))
                         .def("GetDOFAccelerationLimits",getdofaccelerationlimits2, args("indices"),DOXY_FN(KinBody,GetDOFAccelerationLimits))
-                        .def("GetDOFJerkLimits",getdofjerklimits1, DOXY_FN(KinBody,GetDOFJerkLimits1))
-                        .def("GetDOFJerkLimits",getdofjerklimits2, args("indices"),DOXY_FN(KinBody,GetDOFJerkLimits2))
-                        .def("GetDOFHardVelocityLimits",getdofhardvelocitylimits1, DOXY_FN(KinBody,GetDOFHardVelocityLimits1))
-                        .def("GetDOFHardVelocityLimits",getdofhardvelocitylimits2, args("indices"),DOXY_FN(KinBody,GetDOFHardVelocityLimits2))
-                        .def("GetDOFHardAccelerationLimits",getdofhardaccelerationlimits1, DOXY_FN(KinBody,GetDOFHardAccelerationLimits1))
-                        .def("GetDOFHardAccelerationLimits",getdofhardaccelerationlimits2, args("indices"),DOXY_FN(KinBody,GetDOFHardAccelerationLimits2))
-                        .def("GetDOFHardJerkLimits",getdofhardjerklimits1, DOXY_FN(KinBody,GetDOFHardJerkLimits1))
-                        .def("GetDOFHardJerkLimits",getdofhardjerklimits2, args("indices"),DOXY_FN(KinBody,GetDOFHardJerkLimits2))
                         .def("GetDOFTorqueLimits",getdoftorquelimits1, DOXY_FN(KinBody,GetDOFTorqueLimits))
                         .def("GetDOFTorqueLimits",getdoftorquelimits2, args("indices"),DOXY_FN(KinBody,GetDOFTorqueLimits))
                         .def("GetDOFMaxVel",&PyKinBody::GetDOFMaxVel, DOXY_FN(KinBody,GetDOFMaxVel))
@@ -3430,10 +3052,6 @@ void init_openravepy_kinbody()
                         .def("SetDOFLimits",&PyKinBody::SetDOFLimits, SetDOFLimits_overloads(args("lower","upper","indices"), DOXY_FN(KinBody,SetDOFLimits)))
                         .def("SetDOFVelocityLimits",&PyKinBody::SetDOFVelocityLimits, args("limits"), DOXY_FN(KinBody,SetDOFVelocityLimits))
                         .def("SetDOFAccelerationLimits",&PyKinBody::SetDOFAccelerationLimits, args("limits"), DOXY_FN(KinBody,SetDOFAccelerationLimits))
-                        .def("SetDOFJerkLimits",&PyKinBody::SetDOFJerkLimits, args("limits"), DOXY_FN(KinBody,SetDOFJerkLimits))
-                        .def("SetDOFHardVelocityLimits",&PyKinBody::SetDOFHardVelocityLimits, args("limits"), DOXY_FN(KinBody,SetDOFHardVelocityLimits))
-                        .def("SetDOFHardAccelerationLimits",&PyKinBody::SetDOFHardAccelerationLimits, args("limits"), DOXY_FN(KinBody,SetDOFHardAccelerationLimits))
-                        .def("SetDOFHardJerkLimits",&PyKinBody::SetDOFHardJerkLimits, args("limits"), DOXY_FN(KinBody,SetDOFHardJerkLimits))
                         .def("SetDOFTorqueLimits",&PyKinBody::SetDOFTorqueLimits, args("limits"), DOXY_FN(KinBody,SetDOFTorqueLimits))
                         .def("GetDOFResolutions",getdofresolutions1, DOXY_FN(KinBody,GetDOFResolutions))
                         .def("GetDOFResolutions",getdofresolutions2, DOXY_FN(KinBody,GetDOFResolutions))
@@ -3467,9 +3085,7 @@ void init_openravepy_kinbody()
                         .def("GetLinkAccelerations",&PyKinBody::GetLinkAccelerations, GetLinkAccelerations_overloads(args("dofaccelerations", "externalaccelerations"), DOXY_FN(KinBody,GetLinkAccelerations)))
                         .def("GetLinkEnableStates",&PyKinBody::GetLinkEnableStates, DOXY_FN(KinBody,GetLinkEnableStates))
                         .def("SetLinkEnableStates",&PyKinBody::SetLinkEnableStates, DOXY_FN(KinBody,SetLinkEnableStates))
-                        .def("ComputeAABB",&PyKinBody::ComputeAABB, ComputeAABB_overloads(args("enabledOnlyLinks"), DOXY_FN(KinBody,ComputeAABB)))
-                        .def("ComputeAABBFromTransform",&PyKinBody::ComputeAABBFromTransform, ComputeAABBFromTransform_overloads(args("transform", "enabledOnlyLinks"), DOXY_FN(KinBody,ComputeAABBFromTransform)))
-                        .def("ComputeLocalAABB",&PyKinBody::ComputeLocalAABB, ComputeLocalAABB_overloads(args("enabledOnlyLinks"), DOXY_FN(KinBody,ComputeLocalAABB)))
+                        .def("ComputeAABB",&PyKinBody::ComputeAABB, DOXY_FN(KinBody,ComputeAABB))
                         .def("GetCenterOfMass", &PyKinBody::GetCenterOfMass, DOXY_FN(KinBody,GetCenterOfMass))
                         .def("Enable",&PyKinBody::Enable,args("enable"), DOXY_FN(KinBody,Enable))
                         .def("IsEnabled",&PyKinBody::IsEnabled, DOXY_FN(KinBody,IsEnabled))
@@ -3493,16 +3109,6 @@ void init_openravepy_kinbody()
                         .def("CalculateJacobian",&PyKinBody::CalculateJacobian,args("linkindex","position"), DOXY_FN(KinBody,CalculateJacobian "int; const Vector; std::vector"))
                         .def("CalculateRotationJacobian",&PyKinBody::CalculateRotationJacobian,args("linkindex","quat"), DOXY_FN(KinBody,CalculateRotationJacobian "int; const Vector; std::vector"))
                         .def("CalculateAngularVelocityJacobian",&PyKinBody::CalculateAngularVelocityJacobian,args("linkindex"), DOXY_FN(KinBody,CalculateAngularVelocityJacobian "int; std::vector"))
-                        .def("Grab",pgrab2,args("body","grablink"), DOXY_FN(RobotBase,Grab "KinBodyPtr; LinkPtr"))
-                        .def("Grab",pgrab4,args("body","grablink","linkstoignore"), DOXY_FN(KinBody,Grab "KinBodyPtr; LinkPtr; const std::set"))
-                        .def("Release",&PyKinBody::Release,args("body"), DOXY_FN(KinBody,Release))
-                        .def("ReleaseAllGrabbed",&PyKinBody::ReleaseAllGrabbed, DOXY_FN(KinBody,ReleaseAllGrabbed))
-                        .def("ReleaseAllGrabbedWithLink",&PyKinBody::ReleaseAllGrabbedWithLink, args("grablink"), DOXY_FN(KinBody,ReleaseAllGrabbedWithLink))
-                        .def("RegrabAll",&PyKinBody::RegrabAll, DOXY_FN(KinBody,RegrabAll))
-                        .def("IsGrabbing",&PyKinBody::IsGrabbing,args("body"), DOXY_FN(KinBody,IsGrabbing))
-                        .def("GetGrabbed",&PyKinBody::GetGrabbed, DOXY_FN(KinBody,GetGrabbed))
-                        .def("GetGrabbedInfo",&PyKinBody::GetGrabbedInfo, DOXY_FN(KinBody,GetGrabbedInfo))
-                        .def("ResetGrabbed",&PyKinBody::ResetGrabbed, args("grabbedinfos"), DOXY_FN(KinBody,ResetGrabbed))
                         .def("ComputeHessianTranslation",&PyKinBody::ComputeHessianTranslation,ComputeHessianTranslation_overloads(args("linkindex","position","indices"), DOXY_FN(KinBody,ComputeHessianTranslation)))
                         .def("ComputeHessianAxisAngle",&PyKinBody::ComputeHessianAxisAngle,ComputeHessianAxisAngle_overloads(args("linkindex","indices"), DOXY_FN(KinBody,ComputeHessianAxisAngle)))
                         .def("ComputeInverseDynamics",&PyKinBody::ComputeInverseDynamics, ComputeInverseDynamics_overloads(args("dofaccelerations","externalforcetorque","returncomponents"), sComputeInverseDynamicsDoc.c_str()))
@@ -3569,7 +3175,6 @@ void init_openravepy_kinbody()
         kinbody.attr("LinkInfo") = linkinfo;
         kinbody.attr("GeometryInfo") = geometryinfo;
         kinbody.attr("JointInfo") = jointinfo;
-        kinbody.attr("GrabbedInfo") = grabbedinfo;
         {
             scope link = class_<PyLink, boost::shared_ptr<PyLink> >("Link", DOXY_CLASS(KinBody::Link), no_init)
                          .def("GetName",&PyLink::GetName, DOXY_FN(KinBody::Link,GetName))
@@ -3584,7 +3189,6 @@ void init_openravepy_kinbody()
                          .def("IsParentLink",&PyLink::IsParentLink, DOXY_FN(KinBody::Link,IsParentLink))
                          .def("GetCollisionData",&PyLink::GetCollisionData, DOXY_FN(KinBody::Link,GetCollisionData))
                          .def("ComputeAABB",&PyLink::ComputeAABB, DOXY_FN(KinBody::Link,ComputeAABB))
-                         .def("ComputeAABBFromTransform",&PyLink::ComputeAABBFromTransform, args("transform"), DOXY_FN(KinBody::Link,ComputeAABB))
                          .def("ComputeLocalAABB",&PyLink::ComputeLocalAABB, DOXY_FN(KinBody::Link,ComputeLocalAABB))
                          .def("GetTransform",&PyLink::GetTransform, DOXY_FN(KinBody::Link,GetTransform))
                          .def("GetTransformPose",&PyLink::GetTransformPose, DOXY_FN(KinBody::Link,GetTransform))
@@ -3686,7 +3290,6 @@ void init_openravepy_kinbody()
                           .def("SetMimicEquations", &PyJoint::SetMimicEquations, args("axis","poseq","veleq","acceleq"), DOXY_FN(KinBody::Joint,SetMimicEquations))
                           .def("GetMaxVel", &PyJoint::GetMaxVel, GetMaxVel_overloads(args("axis"),DOXY_FN(KinBody::Joint,GetMaxVel)))
                           .def("GetMaxAccel", &PyJoint::GetMaxAccel, GetMaxAccel_overloads(args("axis"),DOXY_FN(KinBody::Joint,GetMaxAccel)))
-                          .def("GetMaxJerk", &PyJoint::GetMaxJerk, GetMaxJerk_overloads(args("axis"),DOXY_FN(KinBody::Joint,GetMaxJerk)))
                           .def("GetMaxTorque", &PyJoint::GetMaxTorque, GetMaxTorque_overloads(args("axis"),DOXY_FN(KinBody::Joint,GetMaxTorque)))
                           .def("GetInstantaneousTorqueLimits", &PyJoint::GetInstantaneousTorqueLimits, GetInstantaneousTorqueLimits_overloads(args("axis"),DOXY_FN(KinBody::Joint,GetInstantaneousTorqueLimits)))
                           .def("GetNominalTorqueLimits", &PyJoint::GetNominalTorqueLimits, GetNominalTorqueLimits_overloads(args("axis"),DOXY_FN(KinBody::Joint,GetNominalTorqueLimits)))
@@ -3717,20 +3320,12 @@ void init_openravepy_kinbody()
                           .def("GetLimits", &PyJoint::GetLimits, DOXY_FN(KinBody::Joint,GetLimits))
                           .def("GetVelocityLimits", &PyJoint::GetVelocityLimits, DOXY_FN(KinBody::Joint,GetVelocityLimits))
                           .def("GetAccelerationLimits", &PyJoint::GetAccelerationLimits, DOXY_FN(KinBody::Joint,GetAccelerationLimits))
-                          .def("GetJerkLimits", &PyJoint::GetJerkLimits, DOXY_FN(KinBody::Joint,GetJerkLimits))
-                          .def("GetHardVelocityLimits", &PyJoint::GetHardVelocityLimits, DOXY_FN(KinBody::Joint,GetHardVelocityLimits))
-                          .def("GetHardAccelerationLimits", &PyJoint::GetHardAccelerationLimits, DOXY_FN(KinBody::Joint,GetHardAccelerationLimits))
-                          .def("GetHardJerkLimits", &PyJoint::GetHardJerkLimits, DOXY_FN(KinBody::Joint,GetHardJerkLimits))
                           .def("GetTorqueLimits", &PyJoint::GetTorqueLimits, DOXY_FN(KinBody::Joint,GetTorqueLimits))
                           .def("SetWrapOffset",&PyJoint::SetWrapOffset,SetWrapOffset_overloads(args("offset","axis"), DOXY_FN(KinBody::Joint,SetWrapOffset)))
                           .def("GetWrapOffset",&PyJoint::GetWrapOffset,GetWrapOffset_overloads(args("axis"), DOXY_FN(KinBody::Joint,GetWrapOffset)))
                           .def("SetLimits",&PyJoint::SetLimits,args("lower","upper"), DOXY_FN(KinBody::Joint,SetLimits))
                           .def("SetVelocityLimits",&PyJoint::SetVelocityLimits,args("maxlimits"), DOXY_FN(KinBody::Joint,SetVelocityLimits))
                           .def("SetAccelerationLimits",&PyJoint::SetAccelerationLimits,args("maxlimits"), DOXY_FN(KinBody::Joint,SetAccelerationLimits))
-                          .def("SetJerkLimits",&PyJoint::SetJerkLimits,args("maxlimits"), DOXY_FN(KinBody::Joint,SetJerkLimits))
-                          .def("SetHardVelocityLimits",&PyJoint::SetHardVelocityLimits,args("maxlimits"), DOXY_FN(KinBody::Joint,SetHardVelocityLimits))
-                          .def("SetHardAccelerationLimits",&PyJoint::SetHardAccelerationLimits,args("maxlimits"), DOXY_FN(KinBody::Joint,SetHardAccelerationLimits))
-                          .def("SetHardJerkLimits",&PyJoint::SetHardJerkLimits,args("maxlimits"), DOXY_FN(KinBody::Joint,SetHardJerkLimits))
                           .def("SetTorqueLimits",&PyJoint::SetTorqueLimits,args("maxlimits"), DOXY_FN(KinBody::Joint,SetTorqueLimits))
                           .def("GetResolution",&PyJoint::GetResolution,args("axis"), DOXY_FN(KinBody::Joint,GetResolution))
                           .def("GetResolutions",&PyJoint::GetResolutions,DOXY_FN(KinBody::Joint,GetResolutions))

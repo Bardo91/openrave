@@ -73,11 +73,8 @@ protected:
 };
 
 XMLReadablePtr ExtractXMLReadable(object o) {
-    if( !IS_PYTHONOBJECT_NONE(o) ) {
-        extract<PyXMLReadablePtr> pyreadable(o);
-        return ((PyXMLReadablePtr)pyreadable)->GetXMLReadable();
-    }
-    return XMLReadablePtr();
+    extract<PyXMLReadablePtr> pyreadable(o);
+    return ((PyXMLReadablePtr)pyreadable)->GetXMLReadable();
 }
 
 object toPyXMLReadable(XMLReadablePtr p) {
@@ -167,13 +164,6 @@ public:
         return toPyVector3(ab.pos);
     }
 
-    dict toDict() {
-        dict d;
-        d["pos"] = pos();
-        d["extents"] = extents();
-        return d;
-    }
-
     virtual string __repr__() {
         return boost::str(boost::format("AABB([%.15e,%.15e,%.15e],[%.15e,%.15e,%.15e])")%ab.pos.x%ab.pos.y%ab.pos.z%ab.extents.x%ab.extents.y%ab.extents.z);
     }
@@ -186,12 +176,6 @@ public:
 
     AABB ab;
 };
-
-AABB ExtractAABB(object o)
-{
-    extract<boost::shared_ptr<PyAABB> > pyaabb(o);
-    return ((boost::shared_ptr<PyAABB>)pyaabb)->ab;
-}
 
 object toPyAABB(const AABB& ab)
 {
@@ -210,129 +194,92 @@ public:
 class PyTriMesh
 {
 public:
-    PyTriMesh() {
+    PyTriMesh() : vertices(numpy::array(boost::python::list())), indices(numpy::array(boost::python::list())) {
     }
-    PyTriMesh(object vertices, object indices) : vertices(vertices), indices(indices) {
-    }
-    PyTriMesh(const TriMesh& mesh) {
-        npy_intp dims[] = { npy_intp(mesh.vertices.size()), npy_intp(3)};
-        PyObject *pyvertices = PyArray_SimpleNew(2,dims, sizeof(dReal)==8 ? PyArray_DOUBLE : PyArray_FLOAT);
-        dReal* pvdata = (dReal*)PyArray_DATA(pyvertices);
+    //PyTriMesh(object vertices, object indices) : vertices(vertices), indices(indices) {
+    //}
+    PyTriMesh(const TriMesh& mesh)
+    : vertices(numpy::empty(boost::python::make_tuple(mesh.vertices.size(), 3), numpy::dtype::get_builtin<dReal>())),
+      indices(numpy::empty(boost::python::make_tuple(mesh.indices.size()/3, 3), numpy::dtype::get_builtin<int32_t>()))
+    {
+        dReal* pvdata = (dReal*) vertices.get_data();
         FOREACHC(itv, mesh.vertices) {
             *pvdata++ = itv->x;
             *pvdata++ = itv->y;
             *pvdata++ = itv->z;
         }
-        vertices = static_cast<numeric::array>(handle<>(pyvertices));
 
-        dims[0] = mesh.indices.size()/3;
-        dims[1] = 3;
-        PyObject *pyindices = PyArray_SimpleNew(2,dims, PyArray_INT32);
-        int32_t* pidata = reinterpret_cast<int32_t*>PyArray_DATA(pyindices);
-        std::memcpy(pidata, mesh.indices.data(), mesh.indices.size() * sizeof(int32_t));
-        indices = static_cast<numeric::array>(handle<>(pyindices));
+        boost::python::tuple indices_shape = boost::python::make_tuple(mesh.indices.size()/3, 3);
+        numpy::ndarray indices = numpy::empty(indices_shape, numpy::dtype::get_builtin<int32_t>());
+        std::memcpy(indices.get_data(), mesh.indices.data(), mesh.indices.size() * sizeof(int32_t));
     }
 
     void GetTriMesh(TriMesh& mesh) {
         int numverts = len(vertices);
         mesh.vertices.resize(numverts);
 
-        PyObject *pPyVertices = vertices.ptr();
-        if (PyArray_Check(pPyVertices)) {
-            if (PyArray_NDIM(pPyVertices) != 2) {
-                throw openrave_exception(_("vertices must be a 2D array"), ORE_InvalidArguments);
+        //PyObject *pPyVertices = vertices.ptr();
+        if (vertices.get_nd() != 2) {
+            throw openrave_exception(_("vertices must be a 2D array"), ORE_InvalidArguments);
+        }
+        if (vertices.get_dtype() != numpy::dtype::get_builtin<float>()) {
+            throw openrave_exception(_("vertices must be in float"), ORE_InvalidArguments);
+        }
+        const size_t n = vertices.get_shape()[0];
+        const size_t nElems = vertices.get_shape()[1];
+        if (vertices.get_dtype() == numpy::dtype::get_builtin<float>()) {
+            const float *vdata = reinterpret_cast<float *>(vertices.get_data());
+            for (size_t i = 0, j = 0; i < n; ++i, j += nElems) {
+                mesh.vertices[i].x = static_cast<dReal>(vdata[j + 0]);
+                mesh.vertices[i].y = static_cast<dReal>(vdata[j + 1]);
+                mesh.vertices[i].z = static_cast<dReal>(vdata[j + 2]);
             }
-            if (!PyArray_ISFLOAT(pPyVertices)) {
-                throw openrave_exception(_("vertices must be in float"), ORE_InvalidArguments);
+        } else if (vertices.get_dtype() == numpy::dtype::get_builtin<double>()) {
+            const double *vdata = reinterpret_cast<double *>(vertices.get_data());
+            for (size_t i = 0, j = 0; i < n; ++i, j += nElems) {
+                mesh.vertices[i].x = static_cast<dReal>(vdata[j + 0]);
+                mesh.vertices[i].y = static_cast<dReal>(vdata[j + 1]);
+                mesh.vertices[i].z = static_cast<dReal>(vdata[j + 2]);
             }
-            PyArrayObject* pPyVerticesContiguous = PyArray_GETCONTIGUOUS(reinterpret_cast<PyArrayObject*>(pPyVertices));
-            AutoPyArrayObjectDereferencer pydecref(pPyVerticesContiguous);
-
-            const size_t typeSize = PyArray_ITEMSIZE(pPyVerticesContiguous);
-            const size_t n = PyArray_DIM(pPyVerticesContiguous, 0);
-            const size_t nElems = PyArray_DIM(pPyVerticesContiguous, 1);
-
-            if (typeSize == sizeof(float)) {
-                const float *vdata = reinterpret_cast<float*>(PyArray_DATA(pPyVerticesContiguous));
-
-                for (size_t i = 0, j = 0; i < n; ++i, j += nElems) {
-                    mesh.vertices[i].x = static_cast<dReal>(vdata[j + 0]);
-                    mesh.vertices[i].y = static_cast<dReal>(vdata[j + 1]);
-                    mesh.vertices[i].z = static_cast<dReal>(vdata[j + 2]);
-                }
-            } else if (typeSize == sizeof(double)) {
-                const double *vdata = reinterpret_cast<double*>(PyArray_DATA(pPyVerticesContiguous));
-
-                for (size_t i = 0, j = 0; i < n; ++i, j += nElems) {
-                    mesh.vertices[i].x = static_cast<dReal>(vdata[j + 0]);
-                    mesh.vertices[i].y = static_cast<dReal>(vdata[j + 1]);
-                    mesh.vertices[i].z = static_cast<dReal>(vdata[j + 2]);
-                }
-            } else {
-                throw openrave_exception(_("Unsupported vertices type"), ORE_InvalidArguments);
-            }
-
         } else {
-            for(int i = 0; i < numverts; ++i) {
-                object ov = vertices[i];
-                mesh.vertices[i].x = extract<dReal>(ov[0]);
-                mesh.vertices[i].y = extract<dReal>(ov[1]);
-                mesh.vertices[i].z = extract<dReal>(ov[2]);
-            }
+            throw openrave_exception(_("Unsupported vertices type"), ORE_InvalidArguments);
         }
 
         const size_t numtris = len(indices);
         mesh.indices.resize(3*numtris);
-        PyObject *pPyIndices = indices.ptr();
-        if (PyArray_Check(pPyIndices)) {
-            if (PyArray_NDIM(pPyIndices) != 2 || PyArray_DIM(pPyIndices, 1) != 3 || !PyArray_ISINTEGER(pPyIndices)) {
-                throw openrave_exception(_("indices must be a Nx3 int array"), ORE_InvalidArguments);
-            }
-            PyArrayObject* pPyIndiciesContiguous = PyArray_GETCONTIGUOUS(reinterpret_cast<PyArrayObject*>(pPyIndices));
-            AutoPyArrayObjectDereferencer pydecref(pPyIndiciesContiguous);
-
-            const size_t typeSize = PyArray_ITEMSIZE(pPyIndiciesContiguous);
-            const bool signedInt = PyArray_ISSIGNED(pPyIndiciesContiguous);
-
-            if (typeSize == sizeof(int32_t)) {
-                if (signedInt) {
-                    const int32_t *idata = reinterpret_cast<int32_t*>(PyArray_DATA(pPyIndiciesContiguous));
-                    std::memcpy(mesh.indices.data(), idata, numtris * 3 * sizeof(int32_t));
-                } else {
-                    const uint32_t *idata = reinterpret_cast<uint32_t*>(PyArray_DATA(pPyIndiciesContiguous));
-                    for (size_t i = 0; i < 3 * numtris; ++i) {
-                        mesh.indices[i] = static_cast<int32_t>(idata[i]);
-                    }
-                }
-            } else if (typeSize == sizeof(int64_t)) {
-                if (signedInt) {
-                    const int64_t *idata = reinterpret_cast<int64_t*>(PyArray_DATA(pPyIndiciesContiguous));
-                    for (size_t i = 0; i < 3 * numtris; ++i) {
-                        mesh.indices[i] = static_cast<int32_t>(idata[i]);
-                    }
-                } else {
-                    const uint64_t *idata = reinterpret_cast<uint64_t*>(PyArray_DATA(pPyIndiciesContiguous));
-                    for (size_t i = 0; i < 3 * numtris; ++i) {
-                        mesh.indices[i] = static_cast<int32_t>(idata[i]);
-                    }
-                }
-            } else if (typeSize == sizeof(uint16_t) && !signedInt) {
-                const uint16_t *idata = reinterpret_cast<uint16_t*>(PyArray_DATA(pPyIndiciesContiguous));
-                for (size_t i = 0; i < 3 * numtris; ++i) {
-                    mesh.indices[i] = static_cast<int32_t>(idata[i]);
-                }
-            } else {
-                throw openrave_exception(_("Unsupported indices type"), ORE_InvalidArguments);
-            }
-
-        } else {
-            for(size_t i = 0; i < numtris; ++i) {
-                object oi = indices[i];
-                mesh.indices[3*i+0] = extract<int32_t>(oi[0]);
-                mesh.indices[3*i+1] = extract<int32_t>(oi[1]);
-                mesh.indices[3*i+2] = extract<int32_t>(oi[2]);
-            }
+        if (indices.get_nd() != 2 || indices.get_shape()[1] != 3) {
+            throw openrave_exception(_("indices must be a Nx3 int array"), ORE_InvalidArguments);
         }
+        numpy::dtype idtype = indices.get_dtype();
+        if (idtype == numpy::dtype::get_builtin<uint16_t>()) {
+            const uint16_t *idata = reinterpret_cast<uint16_t*>(indices.get_data());
+            for (size_t i = 0; i < 3 * numtris; ++i) {
+                mesh.indices[i] = static_cast<int16_t>(idata[i]);
+            }
+        } else if (idtype == numpy::dtype::get_builtin<uint32_t>()) {
+            const uint32_t *idata = reinterpret_cast<uint32_t*>(indices.get_data());
+            for (size_t i = 0; i < 3 * numtris; ++i) {
+                mesh.indices[i] = static_cast<int32_t>(idata[i]);
+            }
+        } else if (idtype == numpy::dtype::get_builtin<uint64_t>()) {
+            const uint64_t *idata = reinterpret_cast<uint64_t*>(indices.get_data());
+            for (size_t i = 0; i < 3 * numtris; ++i) {
+                mesh.indices[i] = static_cast<int64_t>(idata[i]);
+            }
+        } else if (idtype == numpy::dtype::get_builtin<int16_t>()) {
+            const int16_t *idata = reinterpret_cast<int16_t*>(indices.get_data());
+            std::memcpy(mesh.indices.data(), idata, numtris * 3 * idtype.get_itemsize());
+        } else if (idtype == numpy::dtype::get_builtin<int32_t>()) {
+            const int32_t *idata = reinterpret_cast<int32_t*>(indices.get_data());
+            std::memcpy(mesh.indices.data(), idata, numtris * 3 * idtype.get_itemsize());
+        } else if (idtype == numpy::dtype::get_builtin<int64_t>()) {
+            const int64_t *idata = reinterpret_cast<int64_t*>(indices.get_data());
+            std::memcpy(mesh.indices.data(), idata, numtris * 3 * idtype.get_itemsize());
+        } else {
+            throw openrave_exception(_("Unsupported indices type"), ORE_InvalidArguments);
+        }
+
+
     }
 
     string __str__() {
@@ -342,7 +289,7 @@ public:
         return ConvertStringToUnicode(__str__());
     }
 
-    object vertices,indices;
+    numpy::ndarray vertices, indices;
 };
 
 bool ExtractTriMesh(object o, TriMesh& mesh)
@@ -984,11 +931,11 @@ object poseFromMatrices(object otransforms)
 {
     int N = len(otransforms);
     if( N == 0 ) {
-        return static_cast<numeric::array>(handle<>());
+        return numpy::array(boost::python::list());
     }
-    npy_intp dims[] = { N,7};
-    PyObject *pyvalues = PyArray_SimpleNew(2,dims, sizeof(dReal)==8 ? PyArray_DOUBLE : PyArray_FLOAT);
-    dReal* pvalues = (dReal*)PyArray_DATA(pyvalues);
+    boost::python::tuple shape = boost::python::make_tuple(N, 7);
+    numpy::ndarray pyvalues = numpy::empty(shape, numpy::dtype::get_builtin<dReal>());
+    dReal* pvalues = reinterpret_cast<dReal*>(pyvalues.get_data());
     TransformMatrix tm;
     for(int j = 0; j < N; ++j) {
         object o = otransforms[j];
@@ -1003,18 +950,17 @@ object poseFromMatrices(object otransforms)
         pvalues[4] = tpose.trans.x; pvalues[5] = tpose.trans.y; pvalues[6] = tpose.trans.z;
         pvalues += 7;
     }
-    return static_cast<numeric::array>(handle<>(pyvalues));
+    return std::move(pyvalues);
 }
 
 object InvertPoses(object o)
 {
     int N = len(o);
     if( N == 0 ) {
-        return numeric::array(boost::python::list());
+        return numpy::array(boost::python::list());
     }
-    npy_intp dims[] = { N,7};
-    PyObject *pytrans = PyArray_SimpleNew(2,dims, sizeof(dReal)==8 ? PyArray_DOUBLE : PyArray_FLOAT);
-    dReal* ptrans = (dReal*)PyArray_DATA(pytrans);
+    numpy::ndarray pytrans = numpy::empty(boost::python::make_tuple(N, 7), numpy::dtype::get_builtin<dReal>());
+    dReal* ptrans = (dReal*) pytrans.get_data();
     for(int i = 0; i < N; ++i, ptrans += 7) {
         object oinputtrans = o[i];
         Transform t = Transform(Vector(extract<dReal>(oinputtrans[0]),extract<dReal>(oinputtrans[1]),extract<dReal>(oinputtrans[2]),extract<dReal>(oinputtrans[3])),
@@ -1022,7 +968,7 @@ object InvertPoses(object o)
         ptrans[0] = t.rot.x; ptrans[1] = t.rot.y; ptrans[2] = t.rot.z; ptrans[3] = t.rot.w;
         ptrans[4] = t.trans.x; ptrans[5] = t.trans.y; ptrans[6] = t.trans.z;
     }
-    return static_cast<numeric::array>(handle<>(pytrans));
+    return std::move(pytrans);
 }
 
 object InvertPose(object opose)
@@ -1034,11 +980,6 @@ object InvertPose(object opose)
 object quatRotateDirection(object source, object target)
 {
     return toPyVector4(quatRotateDirection(ExtractVector3(source), ExtractVector3(target)));
-}
-
-object ExtractAxisFromQuat(object oquat, int iaxis)
-{
-    return toPyVector3(ExtractAxisFromQuat(ExtractVector4(oquat), iaxis));
 }
 
 object normalizeAxisRotation(object axis, object quat)
@@ -1062,25 +1003,17 @@ object MultiplyPose(object opose1, object opose2)
     return toPyArray(ExtractTransformType<dReal>(opose1)*ExtractTransformType<dReal>(opose2));
 }
 
-object poseTransformPoint(object opose, object opoint)
-{
-    Transform t = ExtractTransformType<dReal>(opose);
-    Vector newpoint = t*ExtractVector3(opoint);
-    return toPyVector3(newpoint);
-}
-
 object poseTransformPoints(object opose, object opoints)
 {
     Transform t = ExtractTransformType<dReal>(opose);
     int N = len(opoints);
-    npy_intp dims[] = { N,3};
-    PyObject *pytrans = PyArray_SimpleNew(2,dims, sizeof(dReal)==8 ? PyArray_DOUBLE : PyArray_FLOAT);
-    dReal* ptrans = (dReal*)PyArray_DATA(pytrans);
+    numpy::ndarray pytrans = numpy::empty(boost::python::make_tuple(N, 3), numpy::dtype::get_builtin<dReal>());
+    dReal* ptrans = (dReal*) pytrans.get_data();
     for(int i = 0; i < N; ++i, ptrans += 3) {
         Vector newpoint = t*ExtractVector3(opoints[i]);
         ptrans[0] = newpoint.x; ptrans[1] = newpoint.y; ptrans[2] = newpoint.z;
     }
-    return static_cast<numeric::array>(handle<>(pytrans));
+    return std::move(pytrans);
 }
 
 object TransformLookat(object olookat, object ocamerapos, object ocameraup)
@@ -1241,11 +1174,9 @@ void init_openravepy_global()
     .def("__str__",&PyAABB::__str__)
     .def("__unicode__",&PyAABB::__unicode__)
     .def("__repr__",&PyAABB::__repr__)
-    .def("toDict", &PyAABB::toDict)
     .def_pickle(AABB_pickle_suite())
     ;
     class_<PyTriMesh, boost::shared_ptr<PyTriMesh> >("TriMesh", DOXY_CLASS(TriMesh))
-    .def(init<object,object>(args("vertices","indices")))
     .def_readwrite("vertices",&PyTriMesh::vertices)
     .def_readwrite("indices",&PyTriMesh::indices)
     .def("__str__",&PyTriMesh::__str__)
@@ -1395,14 +1326,12 @@ void init_openravepy_global()
     def("InvertPoses",openravepy::InvertPoses,args("poses"), "Inverts a Nx7 array of poses where first 4 columns are the quaternion and last 3 are the translation components.\n\n:param poses: nx7 array");
     def("InvertPose",openravepy::InvertPose,args("pose"), "Inverts a 7-element pose where first 4 columns are the quaternion and last 3 are the translation components.\n\n:param pose: 7-element array");
     def("quatRotateDirection",openravepy::quatRotateDirection,args("sourcedir,targetdir"), DOXY_FN1(quatRotateDirection));
-    def("ExtractAxisFromQuat",openravepy::ExtractAxisFromQuat,args("quat","iaxis"),DOXY_FN1(ExtractAxisFromQuat));
     def("MultiplyQuat",openravepy::MultiplyQuat,args("quat0","quat1"),DOXY_FN1(quatMultiply));
     def("quatMult",openravepy::MultiplyQuat,args("quat0","quat1"),DOXY_FN1(quatMultiply));
     def("quatMultiply",openravepy::MultiplyQuat,args("quat0","quat1"),DOXY_FN1(quatMultiply));
     def("InvertQuat",openravepy::InvertQuat,args("quat"),DOXY_FN1(quatInverse));
     def("quatInverse",openravepy::InvertQuat,args("quat"),DOXY_FN1(quatInverse));
     def("MultiplyPose",openravepy::MultiplyPose,args("pose1","pose2"),"multiplies two poses.\n\n:param pose1: 7 values\n\n:param pose2: 7 values\n");
-    def("poseTransformPoint",openravepy::poseTransformPoint,args("pose","point"),"left-transforms a 3D point by a pose transformation.\n\n:param pose: 7 values\n\n:param points: 3 values");
     def("poseTransformPoints",openravepy::poseTransformPoints,args("pose","points"),"left-transforms a set of points by a pose transformation.\n\n:param pose: 7 values\n\n:param points: Nx3 values");
     def("TransformLookat",openravepy::TransformLookat,args("lookat","camerapos","cameraup"),"Returns a camera matrix that looks along a ray with a desired up vector.\n\n:param lookat: unit axis, 3 values\n\n:param camerapos: 3 values\n\n:param cameraup: unit axis, 3 values\n");
     def("transformLookat",openravepy::TransformLookat,args("lookat","camerapos","cameraup"),"Returns a camera matrix that looks along a ray with a desired up vector.\n\n:param lookat: unit axis, 3 values\n\n:param camerapos: 3 values\n\n:param cameraup: unit axis, 3 values\n");

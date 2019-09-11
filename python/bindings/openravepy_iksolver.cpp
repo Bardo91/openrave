@@ -123,7 +123,7 @@ public:
     }
     object GetFreeParameters() const {
         if( _pIkSolver->GetNumFreeParameters() == 0 ) {
-            return numeric::array(boost::python::list());
+            return numpy::array(boost::python::list());
         }
         vector<dReal> values;
         _pIkSolver->GetFreeParameters(values);
@@ -239,15 +239,6 @@ object toPyIkReturn(const IkReturn& ret)
     return object(PyIkReturnPtr(new PyIkReturn(ret)));
 }
 
-IkSolverBasePtr GetIkSolver(object oiksolver)
-{
-    extract<PyIkSolverBasePtr> pyiksolver(oiksolver);
-    if( pyiksolver.check() ) {
-        return ((PyIkSolverBasePtr)pyiksolver)->GetIkSolver();
-    }
-    return IkSolverBasePtr();
-}
-
 IkSolverBasePtr GetIkSolver(PyIkSolverBasePtr pyIkSolver)
 {
     return !pyIkSolver ? IkSolverBasePtr() : pyIkSolver->GetIkSolver();
@@ -256,15 +247,6 @@ IkSolverBasePtr GetIkSolver(PyIkSolverBasePtr pyIkSolver)
 PyInterfaceBasePtr toPyIkSolver(IkSolverBasePtr pIkSolver, PyEnvironmentBasePtr pyenv)
 {
     return !pIkSolver ? PyInterfaceBasePtr() : PyInterfaceBasePtr(new PyIkSolverBase(pIkSolver,pyenv));
-}
-
-object toPyIkSolver(IkSolverBasePtr pIkSolver, object opyenv)
-{
-    extract<PyEnvironmentBasePtr> pyenv(opyenv);
-    if( pyenv.check() ) {
-        return object(toPyIkSolver(pIkSolver,(PyEnvironmentBasePtr)pyenv));
-    }
-    return object();
 }
 
 PyIkSolverBasePtr RaveCreateIkSolver(PyEnvironmentBasePtr pyenv, const std::string& name)

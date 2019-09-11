@@ -104,8 +104,7 @@ IKFast can also be used as a library in python. Generating 6D IK for the Barrett
   solver = ikfast.IKFastSolver(kinbody=kinbody)
   chaintree = solver.generateIkSolver(baselink=0,eelink=7,freeindices=[2],solvefn=ikfast.IKFastSolver.solveFullIK_6D)
   code = solver.writeIkSolver(chaintree)
-  with open('ik.cpp','w') as f:
-      f.write(code)
+  open('ik.cpp','w').write(code)
 
 .. _ikfast_generatedcpp:
 
@@ -199,10 +198,6 @@ except:
 
 import numpy # required for fast eigenvalue computation
 from sympy import *
-if sympy_version > '0.7.1':
-    _zeros, _ones = zeros, ones
-    zeros = lambda args: _zeros(*args)
-    ones = lambda args: _ones(*args)
 try:
     import mpmath # on some distributions, sympy does not have mpmath in its scope
 except ImportError:
@@ -463,7 +458,6 @@ class AST:
         AddHalfTanValue = False
         dictequations = None
         presetcheckforzeros = None
-        checkEquationsUsed = True # if True then check equationsused at the end to make sure solution is consistent
         equationsused = None
         """Meaning of FeasibleIsZeros:
         If set to false, then solution is feasible only if all of these equations evalute to non-zero.
@@ -524,11 +518,7 @@ class AST:
         def getPresetCheckForZeros(self):
             return self.presetcheckforzeros
         def getEquationsUsed(self):
-            if self.checkEquationsUsed:
-                return self.equationsused
-            
-            return None
-        
+            return self.equationsused
         def GetZeroThreshold(self):
             return self.thresh
         
@@ -1323,7 +1313,7 @@ class IKFastSolver(AutoReloader):
         __slots__ = ['joint','iaxis']
 
     class Variable:
-        __slots__ = ['name','var','svar','cvar','tvar','htvar','vars','subs','subsinv']
+        __slots__ = ['var','svar','cvar','tvar','htvar']
         def __init__(self, var):
             self.name = var.name
             self.var = var
@@ -1372,11 +1362,8 @@ class IKFastSolver(AutoReloader):
                 if handledcases == currentcases:
                     return True
             return False
-    
+
     def __init__(self, kinbody=None,kinematicshash='',precision=None, checkpreemptfn=None):
-        """
-        :param checkpreemptfn: checkpreemptfn(msg, progress) called periodically at various points in ikfast. Takes in two arguments to notify user how far the process has completed.
-        """
         self._checkpreemptfn = checkpreemptfn
         self.usinglapack = False
         self.useleftmultiply = True
@@ -1405,12 +1392,10 @@ class IKFastSolver(AutoReloader):
                 name = str('j%d')%idof
                 self.axismap[name] = axis
                 self.axismapinv[idof] = name
-    
-    def _CheckPreemptFn(self, msg=u'', progress=0.25):
-        """progress is a value from [0,1] where 0 is just starting and 1 is complete 
-        """
+
+    def _CheckPreemptFn(self):
         if self._checkpreemptfn is not None:
-            self._checkpreemptfn(msg, progress=progress)
+            self._checkpreemptfn()
     
     def convertRealToRational(self, x,precision=None):
         if precision is None:
@@ -1631,7 +1616,7 @@ class IKFastSolver(AutoReloader):
                             # get the mimic equation
                             var = joint.GetMimicEquation(iaxis)
                             for itestjoint, testjoint in enumerate(chainjoints):
-                                var = var.replace(testjoint.GetName(), 'j%d'%testjoint.GetDOFIndex())
+                                var = var.replace(testjoint.GetName(), 'j%d'%itestjoint)
                             # this needs to be reduced!
                             cosvar = cos(var)
                             sinvar = sin(var)
@@ -2151,28 +2136,18 @@ class IKFastSolver(AutoReloader):
     def writeIkSolver(self,chaintree,lang=None):
         """write the ast into a specific langauge, prioritize c++
         """
-        self._CheckPreemptFn(progress=0.5)
         if lang is None:
             if CodeGenerators.has_key('cpp'):
                 lang = 'cpp'
             else:
                 lang = CodeGenerators.keys()[0]
         log.info('generating %s code...'%lang)
-        if self._checkpreemptfn is not None:
-            import weakref
-            weakself = weakref.proxy(self)
-            def _CheckPreemtCodeGen(msg, progress):
-                # put the progress in the latter half
-                weakself._checkpreemptfn(u'CodeGen %s'%msg, 0.5+0.5*progress)
-        else:
-            _CheckPreemtCodeGen = None
-        return CodeGenerators[lang](kinematicshash=self.kinematicshash,version=__version__,iktypestr=self._iktype, checkpreemptfn=_CheckPreemtCodeGen).generate(chaintree)
+        return CodeGenerators[lang](kinematicshash=self.kinematicshash,version=__version__).generate(chaintree)
     
     def generateIkSolver(self, baselink, eelink, freeindices=None, solvefn=None, ikfastoptions=0):
         """
         :param ikfastoptions: options that control how ikfast.
         """
-        self._CheckPreemptFn(progress=0)
         if solvefn is None:
             solvefn = IKFastSolver.solveFullIK_6D
         chainlinks = self.kinbody.GetChain(baselink,eelink,returnjoints=False)
@@ -2316,7 +2291,7 @@ class IKFastSolver(AutoReloader):
 #             LinksRaw = LinksRaw2
 #             self.globalsymbols += numbersubs
         self.Teeleftmult = self.multiplyMatrix(LinksLeft) # the raw ee passed to the ik solver function
-        self._CheckPreemptFn(progress=0.01)
+        self._CheckPreemptFn()
         chaintree = solvefn(self, LinksRaw, jointvars, isolvejointvars)
         if self.useleftmultiply:
             chaintree.leftmultiply(Tleft=self.multiplyMatrix(LinksLeft), Tleftinv=self.multiplyMatrix(LinksLeftInv[::-1]))
@@ -2373,18 +2348,18 @@ class IKFastSolver(AutoReloader):
             testconsistentvalues.append(allsubs)
         return testconsistentvalues
 
-    def solveFullIK_Direction3D(self,LinksRaw, jointvars, isolvejointvars, rawmanipdir=Matrix(3,1,[S.Zero,S.Zero,S.One])):
-        """manipdir needs to be filled with a 3elemtn vector of the initial direction to control"""
+    def solveFullIK_Direction3D(self,LinksRaw, jointvars, isolvejointvars, rawbasedir=Matrix(3,1,[S.Zero,S.Zero,S.One])):
+        """basedir needs to be filled with a 3elemtn vector of the initial direction to control"""
         self._iktype = 'direction3d'
-        manipdir = Matrix(3,1,[Float(x,30) for x in rawmanipdir])
-        manipdir /= sqrt(manipdir[0]*manipdir[0]+manipdir[1]*manipdir[1]+manipdir[2]*manipdir[2])
+        basedir = Matrix(3,1,[Float(x,30) for x in rawbasedir])
+        basedir /= sqrt(basedir[0]*basedir[0]+basedir[1]*basedir[1]+basedir[2]*basedir[2])
         for i in range(3):
-            manipdir[i] = self.convertRealToRational(manipdir[i])
+            basedir[i] = self.convertRealToRational(basedir[i])
         Links = LinksRaw[:]
         LinksInv = [self.affineInverse(link) for link in Links]
         T = self.multiplyMatrix(Links)
         self.Tfinal = zeros((4,4))
-        self.Tfinal[0,0:3] = (T[0:3,0:3]*manipdir).transpose()
+        self.Tfinal[0,0:3] = (T[0:3,0:3]*basedir).transpose()
         self.testconsistentvalues = self.ComputeConsistentValues(jointvars,self.Tfinal,numsolutions=4)
         endbranchtree = [AST.SolverStoreSolution(jointvars,isHinge=[self.IsHinge(var.name) for var in jointvars])]
         solvejointvars = [jointvars[i] for i in isolvejointvars]
@@ -2399,7 +2374,7 @@ class IKFastSolver(AutoReloader):
         Dsee = []
         for i in range(len(Links)-1):
             T = self.multiplyMatrix(Links[i:])
-            D = T[0:3,0:3]*manipdir
+            D = T[0:3,0:3]*basedir
             hasvars = [self.has(D,v) for v in solvejointvars]
             if __builtin__.sum(hasvars) == numvarsdone:
                 Ds.append(D)
@@ -2413,22 +2388,22 @@ class IKFastSolver(AutoReloader):
         tree = self.verifyAllEquations(AllEquations,solvejointvars,self.freevarsubs,tree)
         return AST.SolverIKChainDirection3D([(jointvars[ijoint],ijoint) for ijoint in isolvejointvars], [(v,i) for v,i in izip(self.freejointvars,self.ifreejointvars)], Dee=self.Tee[0,0:3].transpose().subs(self.freevarsubs), jointtree=tree,Dfk=self.Tfinal[0,0:3].transpose())
 
-    def solveFullIK_Lookat3D(self,LinksRaw, jointvars, isolvejointvars,rawmanipdir=Matrix(3,1,[S.Zero,S.Zero,S.One]),rawmanippos=Matrix(3,1,[S.Zero,S.Zero,S.Zero])):
-        """manipdir,manippos needs to be filled with a direction and position of the ray to control the lookat
+    def solveFullIK_Lookat3D(self,LinksRaw, jointvars, isolvejointvars,rawbasedir=Matrix(3,1,[S.Zero,S.Zero,S.One]),rawbasepos=Matrix(3,1,[S.Zero,S.Zero,S.Zero])):
+        """basedir,basepos needs to be filled with a direction and position of the ray to control the lookat
         """
         self._iktype = 'lookat3d'
-        manipdir = Matrix(3,1,[Float(x,30) for x in rawmanipdir])
-        manippos = Matrix(3,1,[self.convertRealToRational(x) for x in rawmanippos])
-        manipdir /= sqrt(manipdir[0]*manipdir[0]+manipdir[1]*manipdir[1]+manipdir[2]*manipdir[2])
+        basedir = Matrix(3,1,[Float(x,30) for x in rawbasedir])
+        basepos = Matrix(3,1,[self.convertRealToRational(x) for x in rawbasepos])
+        basedir /= sqrt(basedir[0]*basedir[0]+basedir[1]*basedir[1]+basedir[2]*basedir[2])
         for i in range(3):
-            manipdir[i] = self.convertRealToRational(manipdir[i])
-        manippos = manippos-manipdir*manipdir.dot(manippos)
+            basedir[i] = self.convertRealToRational(basedir[i])
+        basepos = basepos-basedir*basedir.dot(basepos)
         Links = LinksRaw[:]
         LinksInv = [self.affineInverse(link) for link in Links]
         T = self.multiplyMatrix(Links)
         self.Tfinal = zeros((4,4))
-        self.Tfinal[0,0:3] = (T[0:3,0:3]*manipdir).transpose()
-        self.Tfinal[0:3,3] = T[0:3,0:3]*manippos+T[0:3,3]
+        self.Tfinal[0,0:3] = (T[0:3,0:3]*basedir).transpose()
+        self.Tfinal[0:3,3] = T[0:3,0:3]*basepos+T[0:3,3]
         self.testconsistentvalues = self.ComputeConsistentValues(jointvars,self.Tfinal,numsolutions=4)
         solvejointvars = [jointvars[i] for i in isolvejointvars]
         if len(solvejointvars) != 2:
@@ -2442,8 +2417,8 @@ class IKFastSolver(AutoReloader):
         Positionsee = []
         for i in range(len(Links)-1):
             T = self.multiplyMatrix(Links[i:])
-            P = T[0:3,0:3]*manippos+T[0:3,3]
-            D = T[0:3,0:3]*manipdir
+            P = T[0:3,0:3]*basepos+T[0:3,3]
+            D = T[0:3,0:3]*basedir
             hasvars = [self.has(P,v) or self.has(D,v) for v in solvejointvars]
             if __builtin__.sum(hasvars) == numvarsdone:
                 Positions.append(P.cross(D))
@@ -2452,7 +2427,7 @@ class IKFastSolver(AutoReloader):
             Tinv = self.affineInverse(Links[i])
             Paccum = Tinv[0:3,0:3]*Paccum+Tinv[0:3,3]
 
-        frontcond = (Links[-1][0:3,0:3]*manipdir).dot(Paccum-(Links[-1][0:3,0:3]*manippos+Links[-1][0:3,3]))
+        frontcond = (Links[-1][0:3,0:3]*basedir).dot(Paccum-(Links[-1][0:3,0:3]*basepos+Links[-1][0:3,3]))
         for v in jointvars:
             frontcond = frontcond.subs(self.Variable(v).subs)
         endbranchtree = [AST.SolverStoreSolution (jointvars,checkgreaterzero=[frontcond],isHinge=[self.IsHinge(var.name) for var in jointvars])]
@@ -2488,26 +2463,26 @@ class IKFastSolver(AutoReloader):
         tree = self.verifyAllEquations(AllEquations,solvejointvars,self.freevarsubs,tree)
         return AST.SolverIKChainRotation3D([(jointvars[ijoint],ijoint) for ijoint in isolvejointvars], [(v,i) for v,i in izip(self.freejointvars,self.ifreejointvars)], (self.Tee[0:3,0:3] * self.affineInverse(Tfirstright)[0:3,0:3]).subs(self.freevarsubs), tree, Rfk = self.Tfinal[0:3,0:3] * Tfirstright[0:3,0:3])
 
-    def solveFullIK_TranslationLocalGlobal6D(self,LinksRaw, jointvars, isolvejointvars, Tmanipraw=eye(4)):
+    def solveFullIK_TranslationLocalGlobal6D(self,LinksRaw, jointvars, isolvejointvars, Tgripperraw=eye(4)):
         self._iktype = 'translation3d'
         Tgripper = eye(4)
         for i in range(4):
             for j in range(4):
-                Tgripper[i,j] = self.convertRealToRational(Tmanipraw[i,j])
+                Tgripper[i,j] = self.convertRealToRational(Tgripperraw[i,j])
         localpos = Matrix(3,1,[self.Tee[0,0],self.Tee[1,1],self.Tee[2,2]])
         chain = self._solveFullIK_Translation3D(LinksRaw,jointvars,isolvejointvars,Tgripper[0:3,3]+Tgripper[0:3,0:3]*localpos,False)
         chain.uselocaltrans = True
         return chain
-    def solveFullIK_Translation3D(self,LinksRaw, jointvars, isolvejointvars, rawmanippos=Matrix(3,1,[S.Zero,S.Zero,S.Zero])):
+    def solveFullIK_Translation3D(self,LinksRaw, jointvars, isolvejointvars, rawbasepos=Matrix(3,1,[S.Zero,S.Zero,S.Zero])):
         self._iktype = 'translation3d'
-        manippos = Matrix(3,1,[self.convertRealToRational(x) for x in rawmanippos])
-        return self._solveFullIK_Translation3D(LinksRaw,jointvars,isolvejointvars,manippos)
+        basepos = Matrix(3,1,[self.convertRealToRational(x) for x in rawbasepos])
+        return self._solveFullIK_Translation3D(LinksRaw,jointvars,isolvejointvars,basepos)
     
-    def _solveFullIK_Translation3D(self,LinksRaw, jointvars, isolvejointvars, manippos,check=True):
+    def _solveFullIK_Translation3D(self,LinksRaw, jointvars, isolvejointvars, basepos,check=True):
         Links = LinksRaw[:]
         LinksInv = [self.affineInverse(link) for link in Links]
         self.Tfinal = self.multiplyMatrix(Links)
-        self.Tfinal[0:3,3] = self.Tfinal[0:3,0:3]*manippos+self.Tfinal[0:3,3]
+        self.Tfinal[0:3,3] = self.Tfinal[0:3,0:3]*basepos+self.Tfinal[0:3,3]
         self.testconsistentvalues = self.ComputeConsistentValues(jointvars,self.Tfinal,numsolutions=4)
         endbranchtree = [AST.SolverStoreSolution (jointvars,isHinge=[self.IsHinge(var.name) for var in jointvars])]
         solvejointvars = [jointvars[i] for i in isolvejointvars]
@@ -2515,10 +2490,10 @@ class IKFastSolver(AutoReloader):
             raise self.CannotSolveError('need 3 joints')
         
         log.info('ikfast translation3d: %s',solvejointvars)
-        Tmanipposinv = eye(4)
-        Tmanipposinv[0:3,3] = -manippos
-        T1links = [Tmanipposinv]+LinksInv[::-1]+[self.Tee]
-        T1linksinv = [self.affineInverse(Tmanipposinv)]+Links[::-1]+[self.Teeinv]
+        Tbaseposinv = eye(4)
+        Tbaseposinv[0:3,3] = -basepos
+        T1links = [Tbaseposinv]+LinksInv[::-1]+[self.Tee]
+        T1linksinv = [self.affineInverse(Tbaseposinv)]+Links[::-1]+[self.Teeinv]
         AllEquations = self.buildEquationsFromPositions(T1links,T1linksinv,solvejointvars,self.freejointvars,uselength=True)
         if check:
             self.checkSolvability(AllEquations,solvejointvars,self.freejointvars)
@@ -2528,15 +2503,15 @@ class IKFastSolver(AutoReloader):
         chaintree.dictequations += self.ppsubs
         return chaintree
 
-    def solveFullIK_TranslationXY2D(self,LinksRaw, jointvars, isolvejointvars, rawmanippos=Matrix(2,1,[S.Zero,S.Zero])):
+    def solveFullIK_TranslationXY2D(self,LinksRaw, jointvars, isolvejointvars, rawbasepos=Matrix(2,1,[S.Zero,S.Zero])):
         self._iktype = 'translationxy2d'
         self.ppsubs = [] # disable since pz is not valid
         self.pp = None
-        manippos = Matrix(2,1,[self.convertRealToRational(x) for x in rawmanippos])
+        basepos = Matrix(2,1,[self.convertRealToRational(x) for x in rawbasepos])
         Links = LinksRaw[:]
         LinksInv = [self.affineInverse(link) for link in Links]
         self.Tfinal = self.multiplyMatrix(Links)
-        self.Tfinal[0:2,3] = self.Tfinal[0:2,0:2]*manippos+self.Tfinal[0:2,3]
+        self.Tfinal[0:2,3] = self.Tfinal[0:2,0:2]*basepos+self.Tfinal[0:2,3]
         self.testconsistentvalues = self.ComputeConsistentValues(jointvars,self.Tfinal,numsolutions=4)
         endbranchtree = [AST.SolverStoreSolution (jointvars,isHinge=[self.IsHinge(var.name) for var in jointvars])]
         solvejointvars = [jointvars[i] for i in isolvejointvars]
@@ -2544,14 +2519,14 @@ class IKFastSolver(AutoReloader):
             raise self.CannotSolveError('need 2 joints')
 
         log.info('ikfast translationxy2d: %s',solvejointvars)
-        Tmanipposinv = eye(4)
-        Tmanipposinv[2,2] = S.Zero
-        Tmanipposinv[0:2,3] = -manippos
-        Tmanippos = eye(4)
-        Tmanippos[2,2] = S.Zero
-        Tmanippos[0:2,3] = manippos
-        T1links = [Tmanipposinv]+LinksInv[::-1]+[self.Tee]
-        T1linksinv = [Tmanippos]+Links[::-1]+[self.Teeinv]
+        Tbaseposinv = eye(4)
+        Tbaseposinv[2,2] = S.Zero
+        Tbaseposinv[0:2,3] = -basepos
+        Tbasepos = eye(4)
+        Tbasepos[2,2] = S.Zero
+        Tbasepos[0:2,3] = basepos
+        T1links = [Tbaseposinv]+LinksInv[::-1]+[self.Tee]
+        T1linksinv = [Tbasepos]+Links[::-1]+[self.Teeinv]
         Taccum = eye(4)
         numvarsdone = 1
         Positions = []
@@ -2578,25 +2553,25 @@ class IKFastSolver(AutoReloader):
         chaintree.dictequations += self.ppsubs
         return chaintree
 
-    def solveFullIK_TranslationXYOrientation3D(self,LinksRaw, jointvars, isolvejointvars, rawmanippos=Matrix(2,1,[S.Zero,S.Zero]), rawangle=S.Zero):
+    def solveFullIK_TranslationXYOrientation3D(self,LinksRaw, jointvars, isolvejointvars, rawbasepos=Matrix(2,1,[S.Zero,S.Zero]), rawangle=S.Zero):
         self._iktype = 'translationxyorientation3d'
         raise self.CannotSolveError('TranslationXYOrientation3D not implemented yet')
 
-    def solveFullIK_Ray4D(self,LinksRaw, jointvars, isolvejointvars, rawmanipdir=Matrix(3,1,[S.Zero,S.Zero,S.One]),rawmanippos=Matrix(3,1,[S.Zero,S.Zero,S.Zero])):
-        """manipdir,manippos needs to be filled with a direction and position of the ray to control"""
+    def solveFullIK_Ray4D(self,LinksRaw, jointvars, isolvejointvars, rawbasedir=Matrix(3,1,[S.Zero,S.Zero,S.One]),rawbasepos=Matrix(3,1,[S.Zero,S.Zero,S.Zero])):
+        """basedir,basepos needs to be filled with a direction and position of the ray to control"""
         self._iktype = 'ray4d'
-        manipdir = Matrix(3,1,[Float(x,30) for x in rawmanipdir])
-        manippos = Matrix(3,1,[self.convertRealToRational(x) for x in rawmanippos])
-        manipdir /= sqrt(manipdir[0]*manipdir[0]+manipdir[1]*manipdir[1]+manipdir[2]*manipdir[2])
+        basedir = Matrix(3,1,[Float(x,30) for x in rawbasedir])
+        basepos = Matrix(3,1,[self.convertRealToRational(x) for x in rawbasepos])
+        basedir /= sqrt(basedir[0]*basedir[0]+basedir[1]*basedir[1]+basedir[2]*basedir[2])
         for i in range(3):
-            manipdir[i] = self.convertRealToRational(manipdir[i])
-        manippos = manippos-manipdir*manipdir.dot(manippos)
+            basedir[i] = self.convertRealToRational(basedir[i])
+        basepos = basepos-basedir*basedir.dot(basepos)
         Links = LinksRaw[:]
         LinksInv = [self.affineInverse(link) for link in Links]
         T = self.multiplyMatrix(Links)
         self.Tfinal = zeros((4,4))
-        self.Tfinal[0,0:3] = (T[0:3,0:3]*manipdir).transpose()
-        self.Tfinal[0:3,3] = T[0:3,0:3]*manippos+T[0:3,3]
+        self.Tfinal[0,0:3] = (T[0:3,0:3]*basedir).transpose()
+        self.Tfinal[0:3,3] = T[0:3,0:3]*basepos+T[0:3,3]
         self.testconsistentvalues = self.ComputeConsistentValues(jointvars,self.Tfinal,numsolutions=4)
         endbranchtree = [AST.SolverStoreSolution (jointvars,isHinge=[self.IsHinge(var.name) for var in jointvars])]
         solvejointvars = [jointvars[i] for i in isolvejointvars]
@@ -2612,8 +2587,8 @@ class IKFastSolver(AutoReloader):
         Positionsee = []
         for i in range(len(Links)-1):
             T = self.multiplyMatrix(Links[i:])
-            P = T[0:3,0:3]*manippos+T[0:3,3]
-            D = T[0:3,0:3]*manipdir
+            P = T[0:3,0:3]*basepos+T[0:3,3]
+            D = T[0:3,0:3]*basedir
             hasvars = [self.has(P,v) or self.has(D,v) for v in solvejointvars]
             if __builtin__.sum(hasvars) == numvarsdone:
                 Positions.append(P.cross(D))
@@ -2637,49 +2612,49 @@ class IKFastSolver(AutoReloader):
         chaintree.dictequations += self.ppsubs
         return chaintree
     
-    def solveFullIK_TranslationDirection5D(self, LinksRaw, jointvars, isolvejointvars, rawmanipdir=Matrix(3,1,[S.Zero,S.Zero,S.One]),rawmanippos=Matrix(3,1,[S.Zero,S.Zero,S.Zero])):
+    def solveFullIK_TranslationDirection5D(self, LinksRaw, jointvars, isolvejointvars, rawbasedir=Matrix(3,1,[S.Zero,S.Zero,S.One]),rawbasepos=Matrix(3,1,[S.Zero,S.Zero,S.Zero])):
         """Solves 3D translation + 3D direction
         """
         self._iktype = 'translationdirection5d'
-        manippos = Matrix(3,1,[self.convertRealToRational(x) for x in rawmanippos])
-        manipdir = Matrix(3,1,[Float(x,30) for x in rawmanipdir])
-        manipdir /= sqrt(manipdir[0]*manipdir[0]+manipdir[1]*manipdir[1]+manipdir[2]*manipdir[2])
-        # try to simplify manipdir based on possible angles
+        basepos = Matrix(3,1,[self.convertRealToRational(x) for x in rawbasepos])
+        basedir = Matrix(3,1,[Float(x,30) for x in rawbasedir])
+        basedir /= sqrt(basedir[0]*basedir[0]+basedir[1]*basedir[1]+basedir[2]*basedir[2])
+        # try to simplify basedir based on possible angles
         for i in range(3):
             value = None
             # TODO should restore 12 once we can capture stuff like pi/12+sqrt(12531342/5141414)
             for num in [3,4,5,6,7,8]:#,12]:
-                if abs((manipdir[i]-cos(pi/num))).evalf() <= (10**-self.precision):
+                if abs((basedir[i]-cos(pi/num))).evalf() <= (10**-self.precision):
                     value = cos(pi/num)
                     break
-                elif abs((manipdir[i]+cos(pi/num))).evalf() <= (10**-self.precision):
+                elif abs((basedir[i]+cos(pi/num))).evalf() <= (10**-self.precision):
                     value = -cos(pi/num)
                     break
-                elif abs((manipdir[i]-sin(pi/num))).evalf() <= (10**-self.precision):
+                elif abs((basedir[i]-sin(pi/num))).evalf() <= (10**-self.precision):
                     value = sin(pi/num)
                     break
-                elif abs((manipdir[i]+sin(pi/num))).evalf() <= (10**-self.precision):
+                elif abs((basedir[i]+sin(pi/num))).evalf() <= (10**-self.precision):
                     value = -sin(pi/num)
                     break
             if value is not None:
-                manipdir[i] = value
+                basedir[i] = value
             else:
-                manipdir[i] = self.convertRealToRational(manipdir[i],5)
-        manipdirlen2 = trigsimp(manipdir[0]*manipdir[0]+manipdir[1]*manipdir[1]+manipdir[2]*manipdir[2]) # unfortunately have to do it again...
-        manipdir /= sqrt(manipdirlen2)
+                basedir[i] = self.convertRealToRational(basedir[i],5)
+        basedirlen2 = trigsimp(basedir[0]*basedir[0]+basedir[1]*basedir[1]+basedir[2]*basedir[2]) # unfortunately have to do it again...
+        basedir /= sqrt(basedirlen2)
         
-        offsetdist = manipdir.dot(manippos)
-        manippos = manippos-manipdir*offsetdist
+        offsetdist = basedir.dot(basepos)
+        basepos = basepos-basedir*offsetdist
         Links = LinksRaw[:]
         
         endbranchtree = [AST.SolverStoreSolution (jointvars,isHinge=[self.IsHinge(var.name) for var in jointvars])]
-        numzeros = int(manipdir[0]==S.Zero) + int(manipdir[1]==S.Zero) + int(manipdir[2]==S.Zero)
+        numzeros = int(basedir[0]==S.Zero) + int(basedir[1]==S.Zero) + int(basedir[2]==S.Zero)
 #         if numzeros < 2:
 #             try:
 #                 log.info('try to rotate the last joint so that numzeros increases')
 #                 assert(not self.has(Links[-1],*solvejointvars))
-#                 localdir = Links[-1][0:3,0:3]*manipdir
-#                 localpos = Links[-1][0:3,0:3]*manippos+Links[-1][0:3,3]
+#                 localdir = Links[-1][0:3,0:3]*basedir
+#                 localpos = Links[-1][0:3,0:3]*basepos+Links[-1][0:3,3]
 #                 AllEquations = Links[-2][0:3,0:3]*localdir
 #                 tree=self.SolveAllEquations(AllEquations,curvars=solvejointvars[-1:],othersolvedvars = [],solsubs = [],endbranchtree=[])
 #                 offset = tree[0].jointeval[0]
@@ -2690,30 +2665,30 @@ class IKFastSolver(AutoReloader):
 #                 localpos2 = Toffset[0:3,0:3]*localpos+Toffset[0:3,3]
 #                 Links[-1]=eye(4)
 #                 for i in range(3):
-#                     manipdir[i] = self.convertRealToRational(localdir2[i])
-#                 manipdir /= sqrt(manipdir[0]*manipdir[0]+manipdir[1]*manipdir[1]+manipdir[2]*manipdir[2]) # unfortunately have to do it again...
-#                 manippos = Matrix(3,1,[self.convertRealToRational(x) for x in localpos2])
+#                     basedir[i] = self.convertRealToRational(localdir2[i])
+#                 basedir /= sqrt(basedir[0]*basedir[0]+basedir[1]*basedir[1]+basedir[2]*basedir[2]) # unfortunately have to do it again...
+#                 basepos = Matrix(3,1,[self.convertRealToRational(x) for x in localpos2])
 #             except Exception, e:
 #                 print 'failed to rotate joint correctly',e
 
         LinksInv = [self.affineInverse(link) for link in Links]
         T = self.multiplyMatrix(Links)
         self.Tfinal = zeros((4,4))
-        self.Tfinal[0,0:3] = (T[0:3,0:3]*manipdir).transpose()
-        self.Tfinal[0:3,3] = T[0:3,0:3]*manippos+T[0:3,3]
+        self.Tfinal[0,0:3] = (T[0:3,0:3]*basedir).transpose()
+        self.Tfinal[0:3,3] = T[0:3,0:3]*basepos+T[0:3,3]
         self.testconsistentvalues = self.ComputeConsistentValues(jointvars,self.Tfinal,numsolutions=4)
 
         solvejointvars = [jointvars[i] for i in isolvejointvars]
         if len(solvejointvars) != 5:
             raise self.CannotSolveError('need 5 joints')
         
-        log.info('ikfast translation direction 5d: %r, direction=%r', solvejointvars, manipdir)
+        log.info('ikfast translation direction 5d: %r, direction=%r', solvejointvars, basedir)
         
         # if last two axes are intersecting, can divide computing position and direction
         ilinks = [i for i,Tlink in enumerate(Links) if self.has(Tlink,*solvejointvars)]
         T = self.multiplyMatrix(Links[ilinks[-2]:])
-        P = T[0:3,0:3]*manippos+T[0:3,3]
-        D = T[0:3,0:3]*manipdir
+        P = T[0:3,0:3]*basepos+T[0:3,3]
+        D = T[0:3,0:3]*basedir
         tree = None
         if not self.has(P,*solvejointvars):
             Tposinv = eye(4)
@@ -2721,7 +2696,7 @@ class IKFastSolver(AutoReloader):
             T0links=[Tposinv]+Links[:ilinks[-2]]
             try:
                 log.info('last 2 axes are intersecting')
-                tree = self.solve5DIntersectingAxes(T0links,manippos,D,solvejointvars,endbranchtree)
+                tree = self.solve5DIntersectingAxes(T0links,basepos,D,solvejointvars,endbranchtree)
             except self.CannotSolveError, e:
                 log.warn('%s', e)
 
@@ -2738,9 +2713,9 @@ class IKFastSolver(AutoReloader):
                     T1links=Links[ilinks[index]:]
                     T1 = self.multiplyMatrix(T1links)
                     p0 = T0[0:3,0:3]*self.Tee[0:3,3]+T0[0:3,3]
-                    p1 = T1[0:3,0:3]*manippos+T1[0:3,3]
+                    p1 = T1[0:3,0:3]*basepos+T1[0:3,3]
                     l0 = T0[0:3,0:3]*self.Tee[0,0:3].transpose()
-                    l1 = T1[0:3,0:3]*manipdir
+                    l1 = T1[0:3,0:3]*basedir
 
                     AllEquations = []
                     for i in range(3):
@@ -2805,8 +2780,8 @@ class IKFastSolver(AutoReloader):
                             if not leftside:
                                 newT1links=[Tcheckorientation] + Links[ilinks[-1]+1:]
                                 newT1 = self.multiplyMatrix(newT1links)
-                                newp1 = newT1[0:3,0:3]*manippos+newT1[0:3,3]
-                                newl1 = newT1[0:3,0:3]*manipdir
+                                newp1 = newT1[0:3,0:3]*basepos+newT1[0:3,3]
+                                newl1 = newT1[0:3,0:3]*basedir
                                 newp1 = newp1.subs(sin(checkorientationjoints[2]), sin(sumjoint - checkorientationjoints[0] - checkorientationjoints[1]).expand(trig=True)).expand()
                                 newl1 = newl1.subs(sin(checkorientationjoints[2]), sin(sumjoint - checkorientationjoints[0] - checkorientationjoints[1]).expand(trig=True)).expand()
                                 for i in range(3):
@@ -2861,13 +2836,13 @@ class IKFastSolver(AutoReloader):
         chaintree.dictequations += self.ppsubs
         return chaintree
 
-    def solve5DIntersectingAxes(self, T0links, manippos, D, solvejointvars, endbranchtree):
+    def solve5DIntersectingAxes(self, T0links, basepos, D, solvejointvars, endbranchtree):
         LinksInv = [self.affineInverse(T) for T in T0links]
         T0 = self.multiplyMatrix(T0links)
-        Tmanipposinv = eye(4)
-        Tmanipposinv[0:3,3] = -manippos
-        T1links = [Tmanipposinv]+LinksInv[::-1]+[self.Tee]
-        T1linksinv = [self.affineInverse(Tmanipposinv)]+T0links[::-1]+[self.Teeinv]
+        Tbaseposinv = eye(4)
+        Tbaseposinv[0:3,3] = -basepos
+        T1links = [Tbaseposinv]+LinksInv[::-1]+[self.Tee]
+        T1linksinv = [self.affineInverse(Tbaseposinv)]+T0links[::-1]+[self.Teeinv]
         AllEquations = self.buildEquationsFromPositions(T1links,T1linksinv,solvejointvars,self.freejointvars,uselength=True)
         transvars = [v for v in solvejointvars if self.has(T0,v)]
         self.checkSolvability(AllEquations,transvars,self.freejointvars)
@@ -2886,14 +2861,14 @@ class IKFastSolver(AutoReloader):
         dirtree.append(AST.SolverFunction('innerfn', self.verifyAllEquations(AllEquations,rotvars,solsubs,localdirtree)))
         return transtree
 
-    def solveFullIK_6D(self, LinksRaw, jointvars, isolvejointvars,Tmanipraw=eye(4)):
+    def solveFullIK_6D(self, LinksRaw, jointvars, isolvejointvars,Tgripperraw=eye(4)):
         """Solves the full 6D translatio + rotation IK
         """
         self._iktype = 'transform6d'
         Tgripper = eye(4)
         for i in range(4):
             for j in range(4):
-                Tgripper[i,j] = self.convertRealToRational(Tmanipraw[i,j])
+                Tgripper[i,j] = self.convertRealToRational(Tgripperraw[i,j])
         Tfirstright = LinksRaw[-1]*Tgripper
         Links = LinksRaw[:-1]
 #         if Links[0][0:3,0:3] == eye(3):
@@ -2908,8 +2883,8 @@ class IKFastSolver(AutoReloader):
         self.testconsistentvalues = self.ComputeConsistentValues(jointvars,self.Tfinal,numsolutions=4)
         endbranchtree = [AST.SolverStoreSolution (jointvars,isHinge=[self.IsHinge(var.name) for var in jointvars])]
         solvejointvars = [jointvars[i] for i in isolvejointvars]
-        if len(solvejointvars) > 6 or len(solvejointvars) < 4:
-            raise self.CannotSolveError('need at most 6 joints')
+        if len(solvejointvars) != 6:
+            raise self.CannotSolveError('need 6 joints')
         
         log.info('ikfast 6d: %s',solvejointvars)        
         tree = self.TestIntersectingAxes(solvejointvars,Links, LinksInv,endbranchtree)
@@ -3014,10 +2989,6 @@ class IKFastSolver(AutoReloader):
         :return: Tlefttrans, NewLinks, Trighttrans
         """
         NewLinks = list(Links)
-        
-        if len(NewLinks) == 1:
-            return eye(4), NewLinks, eye(4)
-
         Trighttrans = eye(4)
         Trighttrans[0:3,3] = NewLinks[-2][0:3,0:3].transpose() * NewLinks[-2][0:3,3]
         Trot_with_trans = Trighttrans * NewLinks[-1]
@@ -3047,18 +3018,14 @@ class IKFastSolver(AutoReloader):
         polysymbols = []
         for solvejointvar in solvejointvars:
             polysymbols += [s[0] for s in self.Variable(solvejointvar).subs]
-        
-        numExpectedRotation = min(3, len(solvejointvars)-3) # the left over are rotation
-        
-        # start backwards since most likely rotation variables are at the end of the chain
-        for i in range(len(ilinks)-(numExpectedRotation-1)-1, -1, -1):
+        for i in range(len(ilinks)-2):
             startindex = ilinks[i]
-            endindex = ilinks[i+numExpectedRotation-1]+1
+            endindex = ilinks[i+2]+1
             Tlefttrans, T0links, Trighttrans = self._ExtractTranslationsOutsideOfMatrixMultiplication(TestLinks[startindex:endindex], solvejointvars)
             T0 = self.multiplyMatrix(T0links)
             # count number of variables in T0[0:3,0:3]
             numVariablesInRotation = sum([self.has(T0[0:3,0:3],solvejointvar) for solvejointvar in solvejointvars])
-            if numVariablesInRotation < numExpectedRotation:
+            if numVariablesInRotation < 3:
                 continue
             solveRotationFirst = None
             # sometimes the intersecting condition can be there, but is masked by small epsilon errors
@@ -3096,7 +3063,7 @@ class IKFastSolver(AutoReloader):
                         rotvars.append(svar)
                     else:
                         transvars.append(svar)
-                if len(rotvars) == numExpectedRotation and len(transvars) == 3:
+                if len(rotvars) == 3 and len(transvars) == 3:
                     log.info('found 3 consecutive intersecting axes links[%d:%d], rotvars=%s, translationvars=%s',startindex, endindex, rotvars,transvars)
                     yield T0links,T1links,transvars,rotvars,solveRotationFirst
 
@@ -3163,7 +3130,7 @@ class IKFastSolver(AutoReloader):
         """Solve 6D equations using fact that 3 axes are intersecting. The 3 intersecting axes are all part of T0links and will be used to compute the rotation of the robot. The other 3 axes are part of T1links and will be used to first compute the position.
         """
         self._iktype = 'transform6d'
-        assert(len(transvars)==3) # and len(rotvars) == 3)  # ok if rotation is 2
+        assert(len(transvars)==3 and len(rotvars) == 3)
         T0 = self.multiplyMatrix(T0links)
         T0posoffset = eye(4)
         T0posoffset[0:3,3] = -T0[0:3,3]
@@ -3203,14 +3170,7 @@ class IKFastSolver(AutoReloader):
             AllEquations = self.buildEquationsFromRotation(T0links,Ree,rotvars,othersolvedvars)
             self.checkSolvability(AllEquations,rotvars,othersolvedvars)
             currotvars = rotvars[:]
-            
             rottree += self.SolveAllEquations(AllEquations,curvars=currotvars,othersolvedvars=othersolvedvars,solsubs=self.freevarsubs[:],endbranchtree=storesolutiontree)
-
-            if len(rotvars) < 3:
-                # since rotation variables are not enough for 3D rotation, do not check equations used
-                for ss in rottree:
-                    ss.checkEquationsUsed = False
-            
             # has to be after SolveAllEquations...?
             for i in range(3):
                 for j in range(3):
@@ -3287,7 +3247,7 @@ class IKFastSolver(AutoReloader):
                         endbranchtree=[AST.SolverSequence([leftovervarstree])]
                         unusedsymbols = []
                         for solvejointvar in solvejointvars:
-                            usedinequs = any([var in rawpolyeqs[0][0].gens or var in rawpolyeqs[0][1].gens for var in self.Variable(solvejointvar).vars])
+                            usedinequs = any([var in rawpolyeqs[0][0].gens or var in rawpolyeqs[0][1] for var in self.Variable(solvejointvar).vars])
                             if not usedinequs:
                                 unusedsymbols += self.Variable(solvejointvar).vars
                         AllEquationsExtra = []
@@ -3328,14 +3288,11 @@ class IKFastSolver(AutoReloader):
             leftovervarstree += origendbranchtree
         return coupledsolutions
     
-    def solveFullIK_TranslationAxisAngle4D(self, LinksRaw, jointvars, isolvejointvars, rawmanipdir=Matrix(3,1,[S.One,S.Zero,S.Zero]),rawmanippos=Matrix(3,1,[S.Zero,S.Zero,S.Zero]),rawglobaldir=Matrix(3,1,[S.Zero,S.Zero,S.One]), rawglobalnormaldir=None, ignoreaxis=None, rawmanipnormaldir=None, Tmanipraw=None):
-        """Solves 3D translation + Angle with respect to an axis
-        :param rawglobalnormaldir: the axis in the base coordinate system that will be computing a rotation about
-        :param rawglobaldir: the axis normal to rawglobalnormaldir that represents the 0 angle.
-        :param rawmanipnormaldir: the normal dir in the manip coordinate system for emasuring the 0 angle offset. complements rawglobalnormaldir, which shoudl be in the base coordinate system.
-        :param rawmanipdir: the axis in the manip coordinate system measuring the in-plane angle with.
-        :param rawmanippos: the position in manip effector coordinate system for measuring position
-        :param Tmanipraw: extra transform of the manip coordinate system with respect to the end effector
+    def solveFullIK_TranslationAxisAngle4D(self, LinksRaw, jointvars, isolvejointvars, rawbasedir=Matrix(3,1,[S.One,S.Zero,S.Zero]),rawbasepos=Matrix(3,1,[S.Zero,S.Zero,S.Zero]),rawglobaldir=Matrix(3,1,[S.Zero,S.Zero,S.One]), rawnormaldir=None, ignoreaxis=None, rawbasenormaldir=None, Tgripperraw=None):
+        """Solves 3D translation + Angle with respect to X-axis
+        :param rawnormaldir: the axis in the base coordinate system that will be computing a rotation about
+        :param rawglobaldir: the axis normal to rawnormaldir that represents the 0 angle.
+        :param basedir: the axis in the effector coordinate system measuring the in-plane angle with
         """
         self._iktype = 'translationaxisangle4d'
         globaldir = Matrix(3,1,[Float(x,30) for x in rawglobaldir])
@@ -3343,20 +3300,20 @@ class IKFastSolver(AutoReloader):
         for i in range(3):
             globaldir[i] = self.convertRealToRational(globaldir[i],5)
         iktype = None
-        if rawglobalnormaldir is not None:
-            globalnormaldir = Matrix(3,1,[Float(x,30) for x in rawglobalnormaldir])
-            binormaldir = globalnormaldir.cross(globaldir).transpose()
-            if globaldir[0] == S.One and globalnormaldir[2] == S.One:
+        if rawnormaldir is not None:
+            normaldir = Matrix(3,1,[Float(x,30) for x in rawnormaldir])
+            binormaldir = normaldir.cross(globaldir).transpose()
+            if globaldir[0] == S.One and normaldir[2] == S.One:
                 if ignoreaxis == 2:
                     iktype = IkType.TranslationXYOrientation3D
                 else:
                     iktype = IkType.TranslationXAxisAngleZNorm4D
-            elif globaldir[1] == S.One and globalnormaldir[0] == S.One:
+            elif globaldir[1] == S.One and normaldir[0] == S.One:
                 iktype = IkType.TranslationYAxisAngleXNorm4D
-            elif globaldir[2] == S.One and globalnormaldir[1] == S.One:
+            elif globaldir[2] == S.One and normaldir[1] == S.One:
                 iktype = IkType.TranslationZAxisAngleYNorm4D
         else:
-            globalnormaldir = None
+            normaldir = None
             if globaldir[0] == S.One:
                 iktype = IkType.TranslationXAxisAngle4D
             elif globaldir[1] == S.One:
@@ -3364,38 +3321,38 @@ class IKFastSolver(AutoReloader):
             elif globaldir[2] == S.One:
                 iktype = IkType.TranslationZAxisAngle4D
 
-        if rawmanipnormaldir is None:
-            manipnormaldir = globalnormaldir
+        if rawbasenormaldir is None:
+            basenormaldir = normaldir
         else:
-            manipnormaldir = Matrix(3,1,[self.convertRealToRational(x) for x in rawmanipnormaldir])
+            basenormaldir = Matrix(3,1,[self.convertRealToRational(x) for x in rawbasenormaldir])
         
         if iktype is None:
             raise ValueError('currently globaldir can only by one of x,y,z axes')
         
-        manippos = Matrix(3,1,[self.convertRealToRational(x) for x in rawmanippos])
-        manipdir = Matrix(3,1,[Float(x,30) for x in rawmanipdir])
-        L = sqrt(manipdir[0]*manipdir[0]+manipdir[1]*manipdir[1]+manipdir[2]*manipdir[2])
-        manipdir /= L
+        basepos = Matrix(3,1,[self.convertRealToRational(x) for x in rawbasepos])
+        basedir = Matrix(3,1,[Float(x,30) for x in rawbasedir])
+        L = sqrt(basedir[0]*basedir[0]+basedir[1]*basedir[1]+basedir[2]*basedir[2])
+        basedir /= L
         for i in range(3):
-            manipdir[i] = self.convertRealToRational(manipdir[i],5)
-        manipdir /= sqrt(manipdir[0]*manipdir[0]+manipdir[1]*manipdir[1]+manipdir[2]*manipdir[2]) # unfortunately have to do it again...
+            basedir[i] = self.convertRealToRational(basedir[i],5)
+        basedir /= sqrt(basedir[0]*basedir[0]+basedir[1]*basedir[1]+basedir[2]*basedir[2]) # unfortunately have to do it again...
         Links = LinksRaw[:]
-        if Tmanipraw is not None:
-            Links.append(self.RoundMatrix(self.GetMatrixFromNumpy(Tmanipraw)))
+        if Tgripperraw is not None:
+            Links.append(self.RoundMatrix(self.GetMatrixFromNumpy(Tgripperraw)))
         
         endbranchtree = [AST.SolverStoreSolution (jointvars,isHinge=[self.IsHinge(var.name) for var in jointvars])]
         
         LinksInv = [self.affineInverse(link) for link in Links]
         Tallmult = self.multiplyMatrix(Links)
         self.Tfinal = zeros((4,4))
-        if globalnormaldir is None:
-            self.Tfinal[0,0] = acos(globaldir.dot(Tallmult[0:3,0:3]*manipdir))
+        if normaldir is None:
+            self.Tfinal[0,0] = acos(globaldir.dot(Tallmult[0:3,0:3]*basedir))
         else:
-            self.Tfinal[0,0] = atan2(binormaldir.dot(Tallmult[0:3,0:3]*manipdir), globaldir.dot(Tallmult[0:3,0:3]*manipdir))
+            self.Tfinal[0,0] = atan2(binormaldir.dot(Tallmult[0:3,0:3]*basedir), globaldir.dot(Tallmult[0:3,0:3]*basedir))
         if self.Tfinal[0,0] == nan:
             raise self.CannotSolveError('cannot solve 4D axis angle IK. Most likely manipulator direction is aligned with the rotation axis')
         
-        self.Tfinal[0:3,3] = Tallmult[0:3,0:3]*manippos+Tallmult[0:3,3]
+        self.Tfinal[0:3,3] = Tallmult[0:3,0:3]*basepos+Tallmult[0:3,3]
         self.testconsistentvalues = self.ComputeConsistentValues(jointvars,self.Tfinal,numsolutions=4)
         
         solvejointvars = [jointvars[i] for i in isolvejointvars]
@@ -3405,51 +3362,48 @@ class IKFastSolver(AutoReloader):
         if len(solvejointvars) != expecteddof:
             raise self.CannotSolveError('need %d joints'%expecteddof)
         
-        log.info('ikfast translation axis %dd, globaldir=%s, manipdir=%s: %s', expecteddof, globaldir, manipdir, solvejointvars)
+        log.info('ikfast translation axis %dd, globaldir=%s, basedir=%s: %s', expecteddof, globaldir, basedir, solvejointvars)
         
         # if last two axes are intersecting, can divide computing position and direction
         ilinks = [i for i,Tlink in enumerate(Links) if self.has(Tlink,*solvejointvars)]
         
-        Tmanipposinv = eye(4)
-        Tmanipposinv[0:3,3] = -manippos
-        T1links = [Tmanipposinv]+LinksInv[::-1]+[self.Tee]
-        T1linksinv = [self.affineInverse(Tmanipposinv)]+Links[::-1]+[self.Teeinv]
+        Tbaseposinv = eye(4)
+        Tbaseposinv[0:3,3] = -basepos
+        T1links = [Tbaseposinv]+LinksInv[::-1]+[self.Tee]
+        T1linksinv = [self.affineInverse(Tbaseposinv)]+Links[::-1]+[self.Teeinv]
         AllEquations = self.buildEquationsFromPositions(T1links,T1linksinv,solvejointvars,self.freejointvars,uselength=True, ignoreaxis=ignoreaxis)
         
-        if not all([abs(eq.subs(self.testconsistentvalues[0]).evalf())<=1e-10 for eq in AllEquations]):
-            raise self.CannotSolveError('some equations are not consistent with the IK, double check if using correct IK type')
-        
         for index in range(len(ilinks)):
-            # inv(T0) * T1 * manipdir = globaldir
-            # => T1 * manipdir = T0 * globaldir
+            # inv(T0) * T1 * basedir = globaldir
+            # => T1 * basedir = T0 * globaldir
             T0links=LinksInv[:ilinks[index]][::-1]
             T0 = self.multiplyMatrix(T0links)
             T1links=Links[ilinks[index]:]
             T1 = self.multiplyMatrix(T1links)
             globaldir2 = T0[0:3,0:3]*globaldir
-            manipdir2 = T1[0:3,0:3]*manipdir
+            basedir2 = T1[0:3,0:3]*basedir
             for i in range(3):
                 if globaldir2[i].is_number:
                     globaldir2[i] = self.convertRealToRational(globaldir2[i])
-                if manipdir2[i].is_number:
-                    manipdir2[i] = self.convertRealToRational(manipdir2[i])
-            eq = self.SimplifyTransform(self.trigsimp(globaldir2.dot(manipdir2),solvejointvars))-cos(self.Tee[0])
+                if basedir2[i].is_number:
+                    basedir2[i] = self.convertRealToRational(basedir2[i])
+            eq = self.SimplifyTransform(self.trigsimp(globaldir2.dot(basedir2),solvejointvars))-cos(self.Tee[0])
             if self.CheckExpressionUnique(AllEquations,eq):
                 AllEquations.append(eq)
-            if globalnormaldir is not None:
+            if normaldir is not None:
                 binormaldir2 = T0[0:3,0:3]*binormaldir
                 for i in range(3):
                     if binormaldir2[i].is_number:
                         binormaldir2[i] = self.convertRealToRational(binormaldir2[i])
-                eq = self.SimplifyTransform(self.trigsimp(binormaldir2.dot(manipdir2),solvejointvars))-sin(self.Tee[0])
+                eq = self.SimplifyTransform(self.trigsimp(binormaldir2.dot(basedir2),solvejointvars))-sin(self.Tee[0])
                 if self.CheckExpressionUnique(AllEquations,eq):
                     AllEquations.append(eq)
         
-        # check if planar with respect to globalnormaldir
+        # check if planar with respect to normaldir
         extravar = None
-        if globalnormaldir is not None:
-            if Tallmult[0:3,0:3]*manipnormaldir == globalnormaldir:
-                Tnormaltest = self.rodrigues(manipnormaldir,pi/2)
+        if normaldir is not None:
+            if Tallmult[0:3,0:3]*basenormaldir == normaldir:
+                Tnormaltest = self.rodrigues(basenormaldir,pi/2)
                 # planar, so know that the sum of all hinge joints is equal to the final angle
                 # can use this fact to substitute one angle with the other values
                 angles = []
@@ -3468,9 +3422,9 @@ class IKFastSolver(AutoReloader):
                 for i in range(3):
                     if binormaldir[i].is_number:
                         binormaldir[i] = self.convertRealToRational(binormaldir[i])
-                    if manipdir[i].is_number:
-                        manipdir[i] = self.convertRealToRational(manipdir[i])
-                zeroangle = atan2(binormaldir.dot(Tzero[0:3,0:3]*manipdir), globaldir.dot(Tzero[0:3,0:3]*manipdir))
+                    if basedir[i].is_number:
+                        basedir[i] = self.convertRealToRational(basedir[i])
+                zeroangle = atan2(binormaldir.dot(Tzero[0:3,0:3]*basedir), globaldir.dot(Tzero[0:3,0:3]*basedir))
                 eqangles = self.Tee[0]-zeroangle
                 for iangle, a in enumerate(angles[:-1]):
                     if isanglepositive[iangle]:
@@ -3499,8 +3453,7 @@ class IKFastSolver(AutoReloader):
         try:
             tree = self.SolveAllEquations(AllEquations,curvars=solvejointvars[:],othersolvedvars=self.freejointvars,solsubs=self.freevarsubs[:],endbranchtree=endbranchtree)
             tree = self.verifyAllEquations(AllEquations,solvejointvars,self.freevarsubs,tree)
-        except self.CannotSolveError, e:
-            log.debug('failed to solve using SolveAllEquations: %s', e)
+        except self.CannotSolveError:
             if 0:
                 solvejointvar0sols = solve(AllEquations[4], solvejointvars[0])
                 NewEquations = [eq.subs(solvejointvars[0], solvejointvar0sols[0]) for eq in AllEquations]
@@ -3512,10 +3465,8 @@ class IKFastSolver(AutoReloader):
                 solsubs = self.freevarsubs[:]
                 freevarinvsubs = [(f[1],f[0]) for f in self.freevarsubs]
                 solinvsubs = [(f[1],f[0]) for f in solsubs]
-                
                 # single variable solutions
                 solutions = []
-                gatheredexceptions = []
                 for curvar in solvejointvars:
                     othervars = [var for var in solvejointvars if var != curvar]
                     curvarsym = self.Variable(curvar)
@@ -3531,13 +3482,9 @@ class IKFastSolver(AutoReloader):
                             for solution in rawsolutions:
                                 self.ComputeSolutionComplexity(solution,othersolvedvars,solvejointvars)
                                 solutions.append((solution,curvar))
-                        except self.CannotSolveError, e:
-                            gatheredexceptions.append((curvar.name, e))
-                    else:
-                        gatheredexceptions.append((curvar.name,None))
-                if len(solutions) == 0:
-                    raise self.CannotSolveError('failed to solve for equations. Possible errors are %s'%gatheredexceptions)
-                
+                        except self.CannotSolveError:
+                            pass
+
                 firstsolution, firstvar = solutions[0]
                 othersolvedvars.append(firstvar)
                 solsubs += self.Variable(firstvar).subs
@@ -3784,7 +3731,7 @@ class IKFastSolver(AutoReloader):
         polysubs = []
         polyvars = []
         for v in solvejointvars:
-            self._CheckPreemptFn(progress=0.05)
+            self._CheckPreemptFn()
             polyvars.append(v)
             if self.IsHinge(v.name):
                 var = self.Variable(v)
@@ -3804,7 +3751,7 @@ class IKFastSolver(AutoReloader):
         for i in range(len(eqs)):
             polyeqs.append([None,None])        
         for j in range(2):
-            self._CheckPreemptFn(progress=0.05)
+            self._CheckPreemptFn()
             for i in range(len(eqs)):
                 poly0 = Poly(eqs[i][j].subs(polysubs),*usedvars[j]).subs(trigsubs)
                 poly1 = Poly(poly0.expand().subs(trigsubs),*usedvars[j])
@@ -3854,7 +3801,7 @@ class IKFastSolver(AutoReloader):
         for j in range(2):
             usedvars.append([var for var in polyvars if any([eq[j].subs(polysubs).has(var) for eq in eqs])])
         for i in range(len(eqs)):
-            self._CheckPreemptFn(progress=0.05)
+            self._CheckPreemptFn()
             if not self.CheckEquationForVarying(eqs[i][0]) and not self.CheckEquationForVarying(eqs[i][1]):
                 for j in range(2):
                     if polyeqs[i][j] is not None:
@@ -3917,7 +3864,7 @@ class IKFastSolver(AutoReloader):
         reducedeqs = []
         tree = []
         for j,leftsideeqs,rightsideeqs,numsymbolcoeffs, _computereducedequations in reducedelayed:
-            self._CheckPreemptFn(progress=0.06)
+            self._CheckPreemptFn()
             try:
                 reducedeqs2 = _computereducedequations()
                 if len(reducedeqs2) == 0:
@@ -3977,7 +3924,7 @@ class IKFastSolver(AutoReloader):
             Asymbols.append([Symbol('gconst%d_%d'%(i,j)) for j in range(A.shape[1])])
         solution = None
         for eqindices in combinations(range(len(leftsideeqs)),len(allmonomsleft)):
-            self._CheckPreemptFn(progress=0.06)
+            self._CheckPreemptFn()
             for i,index in enumerate(eqindices):
                 for k in range(len(allmonomsleft)):
                     A[i,k] = systemcoeffs[index][2][k]
@@ -4547,7 +4494,6 @@ class IKFastSolver(AutoReloader):
             
         hasreducedeqs = True
         while hasreducedeqs:
-            self._CheckPreemptFn(progress=0.08)
             hasreducedeqs = False
             for ipeq,peq in enumerate(neweqs):
                 peq0dict = peq[0].as_dict()
@@ -4867,7 +4813,6 @@ class IKFastSolver(AutoReloader):
                 AU = A[0:1,:]
                 rows = [0]
                 for i in range(1,A.shape[0]):
-                    self._CheckPreemptFn(progress=0.09)
                     AU2 = AU.col_join(A[i:(i+1),:])
                     if AU2.shape[0] == AU2.shape[1]:
                         AUdetmat = AU2
@@ -5233,7 +5178,6 @@ class IKFastSolver(AutoReloader):
         newreducedeqs = []
         hassinglevariable = False
         for eq in reducedeqs:
-            self._CheckPreemptFn(progress=0.10)
             complexity = self.codeComplexity(eq)
             if complexity > 1500:
                 log.warn('equation way too complex (%d), looking for another solution', complexity)
@@ -5393,7 +5337,6 @@ class IKFastSolver(AutoReloader):
             if exportcoeffeqs is not None:
                 break
         
-        self._CheckPreemptFn(progress=0.11)
         if exportcoeffeqs is None:
             if len(nonhtvars) > 0 and newreducedeqs[0].degree:
                 log.info('try to solve one variable in terms of the others')
@@ -6176,7 +6119,7 @@ class IKFastSolver(AutoReloader):
 
         Method also checks if the equations are linearly dependent
         """
-        self._CheckPreemptFn(progress=0.12)
+        self._CheckPreemptFn()
         if len(dialyticeqs) == 0:
             raise self.CannotSolveError('solveDialytically given zero equations')
         
@@ -6217,15 +6160,9 @@ class IKFastSolver(AutoReloader):
         allmonoms.sort()
         origmonoms = list(origmonoms)
         origmonoms.sort()
-
-        if len(origmonoms) == 0 or len(allmonoms) == 0:
-            raise self.CannotSolveError('solveDialytically has no equations')
-        
         if len(allmonoms)<2*len(dialyticeqs):
             log.warn('solveDialytically equations %d > %d, should be equal...', 2*len(dialyticeqs),len(allmonoms))
-            # TODO not sure how to select the equations
-            N = len(allmonoms)/2
-            dialyticeqs = dialyticeqs[:N]
+            dialyticeqs = dialyticeqs[0:(len(allmonoms)/2)]
         if len(allmonoms) == 0 or len(allmonoms)>2*len(dialyticeqs):
             raise self.CannotSolveError('solveDialytically: more unknowns than equations %d>%d'%(len(allmonoms), 2*len(dialyticeqs)))
         
@@ -6252,10 +6189,6 @@ class IKFastSolver(AutoReloader):
                         mlist = list(m)
                         mlist[igen] += 1
                         degree=mlist.pop(ileftvar)
-
-                        if tuple(mlist) not in origmonoms:
-                            raise self.CannotSolveError('equations too simple, monom %r is not in %r'%(mlist, origmonoms))
-                        
                         exportindex = degree*len(origmonoms)*len(dialyticeqs) + len(origmonoms)*ipeq+origmonoms.index(tuple(mlist))
                         assert(exportcoeffeqs[exportindex] == S.Zero)
                         exportcoeffeqs[exportindex] = c
@@ -6358,7 +6291,7 @@ class IKFastSolver(AutoReloader):
                         linearlyindependent = True
                     break
                 else:
-                    log.info('not all abs(eigenvalues) > %e. min is %e', eps, min([Abs(f) for f in eigenvals if Abs(f) < eps]))
+                    log.info('not all eigenvalues are > 0. min is %e', min([Abs(f) > eps for f in eigenvals]))
             if not linearlyindependent:
                 raise self.CannotSolveError('equations are not linearly independent')
 
@@ -6753,7 +6686,7 @@ class IKFastSolver(AutoReloader):
         """
         :param canguessvars: if True, can guess the variables given internal conditions are satisified
         """
-        self._CheckPreemptFn(progress=0.15+(0.3-0.3*100/(self._scopecounter+100))) # go from 0.15 - 0.45. usually scope counters go to several hundred
+        self._CheckPreemptFn()
         if len(curvars) == 0:
             return endbranchtree
         
@@ -8310,11 +8243,7 @@ class IKFastSolver(AutoReloader):
                         s3 = self.trigsimp(s2,othersolvedvars)
                         s4 = self.SimplifyTransform(s3)
                         try:
-                            # check s4 == 0, becasue of a bug in evalf() funcion atan(0, evaluate=False).evalf() fails with NoneTypeError, https://github.com/sympy/sympy/pull/1021. Fixed in sympy version==0.7.2, currently using 0.7.1
-                            if s4 == 0:
-                                jointsolutions.append(2*atan(s4, evaluate=True))
-                            else:
-                                jointsolutions.append(2*atan(s4, evaluate=False)) # don't evalute since chances if this being a number is very low                                                          
+                            jointsolutions.append(2*atan(s4, evaluate=False)) # don't evalute since chances if this being a number is very low
                         except RuntimeError, e:
                             log.warn('got runtime error when taking atan: %s', e)
                     if all([self.isValidSolution(s) and s != S.Zero for s in jointsolutions]) and len(jointsolutions)>0:
@@ -9608,7 +9537,7 @@ python ikfast.py --robot=robots/barrettwam.robot.xml --baselink=0 --eelink=7 --s
     log.addHandler(handler)
     log.setLevel(options.debug)
 
-    solvefn=IKFastSolver.GetSolvers()[options.iktype.lower()]
+    solvefn=IKFastSolver.GetSolvers()[options.iktype]
     if options.robot is not None:
         try:
             env=openravepy.Environment()
@@ -9622,5 +9551,4 @@ python ikfast.py --robot=robots/barrettwam.robot.xml --baselink=0 --eelink=7 --s
             openravepy.RaveDestroy()
 
     if len(code) > 0:
-        with open(options.savefile,'w') as f:
-            f.write(code)
+        open(options.savefile,'w').write(code)

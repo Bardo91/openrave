@@ -58,9 +58,7 @@ except ImportError:
         return curdir if not rel_list else join(*rel_list)
 
 def LoadTrajectoryFromFile(env,trajfile,trajtype=''):
-    with open(trajfile,'r') as f:
-        traj = openravepy_int.RaveCreateTrajectory(env,trajtype).deserialize(f.read())
-    return traj
+    return openravepy_int.RaveCreateTrajectory(env,trajtype).deserialize(open(trajfile,'r').read())
 
 def InitOpenRAVELogging(stream=stdout):
     """Sets the python logging **openravepy** scope to the same debug level as OpenRAVE and initializes handles if they are not present
@@ -282,7 +280,7 @@ def ComputeGeodesicSphereMesh(radius=1.0,level=2):
 
 def DrawAxes(env,target,dist=1.0,linewidth=1,colormode='rgb',coloradd=None):
     """draws xyz coordinate system around target.
-    
+
     :param env: Environment
     :param target: can be a 7 element pose, 4x4 matrix, or the name of a kinbody in the environment
     :param dist: how far the lines extend from the origin
@@ -291,18 +289,9 @@ def DrawAxes(env,target,dist=1.0,linewidth=1,colormode='rgb',coloradd=None):
     :param coloradd: an optional 3-element vector for 
     """
     if isinstance(target,basestring):
-        T = env.GetKinBody(target).GetTransform()
-    elif hasattr(target,'GetTransform'):
-        T = target.GetTransform()
-    elif hasattr(target,'GetTransform6D'):
-        T = target.GetTransform6D()
-    elif hasattr(target,'GetTransformPose'):
-        T = openravepy_int.matrixFromPose(target.GetTransformPose())
+        T = self.env.GetKinBody(target).GetTransform()
     elif len(target) == 7:
         T = openravepy_int.matrixFromPose(target)
-    elif isinstance(target,list):
-        return [DrawAxes(env,subtarget,dist,linewidth,colormode,coloradd) for subtarget in target]
-    
     else:
         T = numpy.array(target)
     if colormode == 'cmy':
@@ -315,7 +304,7 @@ def DrawAxes(env,target,dist=1.0,linewidth=1,colormode='rgb',coloradd=None):
 
 def DrawIkparam(env,ikparam,dist=1.0,linewidth=1,coloradd=None):
     """draws an IkParameterization
-    
+
     """
     if ikparam.GetType() == openravepy_int.IkParameterizationType.Transform6D:
         return DrawAxes(env,ikparam.GetTransform6DPose(),dist,linewidth,coloradd)
@@ -339,19 +328,6 @@ def DrawIkparam(env,ikparam,dist=1.0,linewidth=1,coloradd=None):
         T = openravepy_int.matrixFromAxisAngle([0,0,angle])
         T[0:3,3] = pos
         return DrawAxes(env,T,dist,linewidth,coloradd)
-
-    elif ikparam.GetType() == openravepy_int.IkParameterizationType.TranslationYAxisAngleXNorm4D:
-        pos,angle = ikparam.GetTranslationYAxisAngleXNorm4D()
-        #T = numpy.dot([[1,0,0,0],[0,0,1,0],[0,-1,0,0],[0,0,0,1]], openravepy_int.matrixFromAxisAngle([angle, 0,0]))
-        T = openravepy_int.matrixFromAxisAngle([angle, 0,0])
-        T[0:3,3] = pos
-        return [DrawAxes(env,T,dist,linewidth,coloradd)]
-
-    elif ikparam.GetType() == openravepy_int.IkParameterizationType.TranslationZAxisAngleYNorm4D:
-        pos,angle = ikparam.GetTranslationZAxisAngleYNorm4D()
-        T = openravepy_int.matrixFromAxisAngle([0,angle,0])
-        T[0:3,3] = pos
-        return [DrawAxes(env,T,dist,linewidth,coloradd)]
     
     else:
         raise NotImplemented('iktype %s'%str(ikparam.GetType()))
@@ -397,14 +373,7 @@ def DrawIkparam2(env,ikparam,dist=1.0,linewidth=1,coloradd=None):
     
     elif ikparam.GetType() == openravepy_int.IkParameterizationType.TranslationYAxisAngleXNorm4D:
         pos,angle = ikparam.GetTranslationYAxisAngleXNorm4D()
-        #T = numpy.dot([[1,0,0,0],[0,0,1,0],[0,-1,0,0],[0,0,0,1]], openravepy_int.matrixFromAxisAngle([angle, 0,0]))
-        T = openravepy_int.matrixFromAxisAngle([angle, 0,0])
-        T[0:3,3] = pos
-        return [DrawAxes(env,T,dist,linewidth,coloradd)]
-
-    elif ikparam.GetType() == openravepy_int.IkParameterizationType.TranslationZAxisAngleYNorm4D:
-        pos,angle = ikparam.GetTranslationZAxisAngleYNorm4D()
-        T = openravepy_int.matrixFromAxisAngle([0,angle,0])
+        T = numpy.dot([[1,0,0,0],[0,0,1,0],[0,-1,0,0],[0,0,0,1]], openravepy_int.matrixFromAxisAngle([angle, 0,0]))
         T[0:3,3] = pos
         return [DrawAxes(env,T,dist,linewidth,coloradd)]
     
