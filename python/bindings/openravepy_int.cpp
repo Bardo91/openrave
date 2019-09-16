@@ -1043,7 +1043,7 @@ public:
             return boost::python::object();
         }
         else {
-            return boost::python::object(boost::python::handle<>(PyString_FromStringAndSize(&output[0], output.size())));
+            return boost::python::object(boost::python::handle<>(PyBytes_FromStringAndSize(&output[0], output.size())));
         }
     }
 

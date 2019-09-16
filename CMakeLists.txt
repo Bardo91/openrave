@@ -34,7 +34,9 @@ option(OPT_VIDEORECORDING "Enable video recording" ON)
 option(OPT_PLUGINS "Build the pluings" ON)
 option(OPT_DOUBLE_PRECISION "Use double precision" ON)
 option(OPT_ACCURATEMATH "Use accurate and robust math to account for floating-point errors" ON)
-option(OPT_PYTHON "Build python bindings" ON)
+option(OPT_PYTHON "Build python bindings (first available python)" ON)
+option(OPT_PYTHON2 "Build python3 bindings (force to python2)" OFF)
+option(OPT_PYTHON3 "Build python3 bindings (force to python3)" OFF)
 option(OPT_OCTAVE "Build octave bindings" ON)
 option(OPT_MATLAB "Build matlab bindings" ON)
 option(OPT_STATIC "Build static libraries" OFF)
@@ -87,14 +89,29 @@ find_package(PkgConfig) # pkg_check_modules
 
 set(OPENRAVE_PYTHON_INSTALL_DIR)
 
-if( OPT_PYTHON )
+if( OPT_PYTHON OR OPT_PYTHON2 OR OPT_PYTHON3 )
+  set(PythonInterp_FIND_VERSION_MAJOR 2)
+  if( OPT_PYTHON2 )
+    set(PythonInterp_FIND_VERSION 1)
+    set(PythonInterp_FIND_VERSION_MAJOR 2)
+  endif()
+  if( OPT_PYTHON3 )
+    set(PythonInterp_FIND_VERSION 1)
+    set(PythonInterp_FIND_VERSION_MAJOR 3)
+  endif()
+
+  # can set the following through cmake command line to force a minor version
+  #set(PythonInterp_FIND_VERSION_COUNT 2)
+  #set(PythonInterp_FIND_VERSION_MINOR 5)
+  
   include(FindPythonInterp)
   ## check python
-  find_package(PythonLibs 2) # using PYTHON_INCLUDE_PATH instead of PYTHON_INCLUDE_DIRS?
+  find_package(PythonLibs ${PythonInterp_FIND_VERSION_MAJOR}) # using PYTHON_INCLUDE_PATH instead of PYTHON_INCLUDE_DIRS?
   if( NOT PYTHON_EXECUTABLE )
     # look specifically for 2.6
     find_program(PYTHON_EXECUTABLE NAMES python2.6 python PATHS [HKEY_LOCAL_MACHINE\\SOFTWARE\\Python\\PythonCore\\2.6\\InstallPath])
   endif()
+  set(PYTHON_VERSION ${PYTHON_VERSION_MAJOR}${PYTHON_VERSION_MINOR})
 
   # back compat?
   if( NOT PYTHON_INCLUDE_DIRS )
@@ -105,20 +122,20 @@ if( OPT_PYTHON )
     get_filename_component(PYTHON_EXECUTABLE_NAME ${PYTHON_EXECUTABLE} NAME)
     # architecture independent
 #    execute_process(
-#      COMMAND ${PYTHON_EXECUTABLE} -c "from distutils.sysconfig import get_python_lib; print get_python_lib(0)"
+#      COMMAND ${PYTHON_EXECUTABLE} -c "from distutils.sysconfig import get_python_lib; print(get_python_lib(0))"
 #      OUTPUT_VARIABLE _python_sitepackage OUTPUT_STRIP_TRAILING_WHITESPACE
 #      RESULT_VARIABLE _python_failed0)
 #    # architexture dependent
 #    execute_process(
-#      COMMAND ${PYTHON_EXECUTABLE} -c "from distutils.sysconfig import get_python_lib; print get_python_lib(1)"
+#      COMMAND ${PYTHON_EXECUTABLE} -c "from distutils.sysconfig import get_python_lib; print(get_python_lib(1))"
 #      OUTPUT_VARIABLE _python_distpackage OUTPUT_STRIP_TRAILING_WHITESPACE
 #      RESULT_VARIABLE _python_failed1)
     execute_process(
-      COMMAND ${PYTHON_EXECUTABLE} -c "import numpy; print numpy.get_include()"
+      COMMAND ${PYTHON_EXECUTABLE} -c "import numpy; print(numpy.get_include())"
       OUTPUT_VARIABLE _python_numpy_include OUTPUT_STRIP_TRAILING_WHITESPACE
       RESULT_VARIABLE _python_failed0)
     execute_process(
-      COMMAND ${PYTHON_EXECUTABLE} -c "from distutils.sysconfig import get_python_lib; from myrelpath import relpath; print relpath(get_python_lib(1,prefix='${CMAKE_INSTALL_PREFIX}'),'${CMAKE_INSTALL_PREFIX}')"
+      COMMAND ${PYTHON_EXECUTABLE} -c "from distutils.sysconfig import get_python_lib; from myrelpath import relpath; print(relpath(get_python_lib(1,prefix='${CMAKE_INSTALL_PREFIX}'),'${CMAKE_INSTALL_PREFIX}'))"
       OUTPUT_VARIABLE OPENRAVE_PYTHON_INSTALL_DIR OUTPUT_STRIP_TRAILING_WHITESPACE
       WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
       RESULT_VARIABLE _python_failed2)
@@ -306,7 +323,12 @@ if(NOT MSVC71 AND NOT MSVC80)
     set(Boost_LIBRARY_DIRS $ENV{BOOST_LIBRARYDIR})
   endif()
   set(Boost_ADDITIONAL_VERSIONS "1.46.1" "1.45" "1.44" "1.43" "1.42" "1.41" "1.40" "1.39" "1.38" "1.37.0" "1.37" "1.35.0" "1.34.1" "1.34.0" "1.34" "1.33.1" "1.33.0" "1.33" ${Boost_ADDITIONAL_VERSIONS})
-  find_package(Boost COMPONENTS regex filesystem system python thread iostreams date_time)
+  find_package(Boost COMPONENTS regex filesystem system python-py${PYTHON_VERSION} thread iostreams date_time)
+  if(Boost_PYTHON-PY${PYTHON_VERSION}_FOUND)
+    message(STATUS "found boost python${PYTHON_VERSION}")
+    set(Boost_PYTHON_FOUND ${Boost_PYTHON-PY${PYTHON_VERSION}_FOUND})
+    set(Boost_PYTHON_LIBRARY ${Boost_PYTHON-PY${PYTHON_VERSION}_LIBRARY})
+  endif()
 else()
   # have to rely on local boost and a hack
   add_definitions(-DTEMP_SPIRIT_HACK)
@@ -363,7 +385,7 @@ message(STATUS "found boost version: ${Boost_VERSION}")
 if( NOT Boost_THREAD_LIBRARY OR NOT Boost_DATE_TIME_LIBRARY )
   message(FATAL_ERROR "boost thread and date_time libraries are necessary")
 endif()
-if( OPT_PYTHON AND MSVC AND Boost_VERSION GREATER 104600 AND PYTHON_MAJORMINOR_VERSION STRGREATER "2.6")
+if( (OPT_PYTHON OR OPT_PYTHON2 OR OPT_PYTHON3) AND MSVC AND Boost_VERSION GREATER 104600 AND PYTHON_MAJORMINOR_VERSION STRGREATER "2.6")
   message(STATUS "Boost python library ${Boost_PYTHON_LIBRARY} might not be compiled for Python ${PYTHON_MAJORMINOR_VERSION}")
 endif()
     
@@ -806,12 +828,12 @@ add_subdirectory(src)
 add_subdirectory(octave_matlab)
 add_subdirectory(locale)
 
-if(OPT_PYTHON AND PYTHON_EXECUTABLE)
+if((OPT_PYTHON OR OPT_PYTHON2 OR OPT_PYTHON3) AND PYTHON_EXECUTABLE)
   set(OPENRAVE_USE_LOCAL_SYMPY 1)
   if( PYTHON_EXECUTABLE )
     # get the sympy version
     execute_process(
-      COMMAND ${PYTHON_EXECUTABLE} -c "import sympy; print sympy.__version__"
+      COMMAND ${PYTHON_EXECUTABLE} -c "import sympy; print(sympy.__version__)"
       OUTPUT_VARIABLE _sympy_version OUTPUT_STRIP_TRAILING_WHITESPACE
       RESULT_VARIABLE _sympy_version_failed)
     if( ${_sympy_version_failed} EQUAL 0 )

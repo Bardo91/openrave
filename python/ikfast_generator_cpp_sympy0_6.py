@@ -18,7 +18,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 """generates C++ code from the IKFastSolver AST.
 """
-from __future__ import with_statement # for python 2.5
+from __future__ import with_statement, print_function # for python 2.6
 
 from sympy import __version__ as sympy_version
 if sympy_version >= '0.7.0':
@@ -62,12 +62,16 @@ except ImportError:
     pass
 
 try:
-    from itertools import izip, combinations
+    from itertools import izip
+except:
+    izip = zip
+try:
+    from itertools import combinations
 except ImportError:
     def combinations(items,n):
         if n == 0: yield[]
         else:
-            for  i in xrange(len(items)):
+            for  i in range(len(items)):
                 for cc in combinations(items[i+1:],n-1):
                     yield [items[i]]+cc
 
@@ -551,7 +555,7 @@ int main(int argc, char** argv)
         code += self.indentCode(fcode,4) + "}\nreturn solutions.GetNumSolutions()>0;\n}\n"
 
         # write other functions
-        for name,functioncode in self.functions.iteritems():
+        for name,functioncode in self.functions.items():
             code += self.indentCode(functioncode,4)
         code += "};\n"
         return code
@@ -604,7 +608,7 @@ int main(int argc, char** argv)
         fcode += self.generateTree(node.jointtree)
         code += self.indentCode(fcode,4) + "}\nreturn solutions.GetNumSolutions()>0;\n}\n"
         # write other functions
-        for name,functioncode in self.functions.iteritems():
+        for name,functioncode in self.functions.items():
             code += self.indentCode(functioncode,4)
         code += "};\n"
         return code
@@ -669,7 +673,7 @@ IkReal r00 = 0, r11 = 0, r22 = 0;
         fcode += self.generateTree(node.jointtree)
         code += self.indentCode(fcode,4) + "}\nreturn solutions.GetNumSolutions()>0;\n}\n"
         # write other functions
-        for name,functioncode in self.functions.iteritems():
+        for name,functioncode in self.functions.items():
             code += self.indentCode(functioncode,4)
         code += "};\n"
         return code
@@ -721,7 +725,7 @@ IkReal r00 = 0, r11 = 0, r22 = 0;
         fcode += self.generateTree(node.jointtree)
         code += self.indentCode(fcode,4) + "}\nreturn solutions.GetNumSolutions()>0;\n}\n"
         # write other functions
-        for name,functioncode in self.functions.iteritems():
+        for name,functioncode in self.functions.items():
             code += self.indentCode(functioncode,4)
         code += "};\n"
         return code
@@ -775,7 +779,7 @@ IkReal r00 = 0, r11 = 0, r22 = 0;
         code += self.indentCode(fcode,4) + "}\nreturn solutions.GetNumSolutions()>0;\n}\n"
 
         # write other functions
-        for name,functioncode in self.functions.iteritems():
+        for name,functioncode in self.functions.items():
             code += self.indentCode(functioncode,4)
         code += "};\n"
         return code
@@ -839,7 +843,7 @@ IkReal r00 = 0, r11 = 0, r22 = 0;
         code += self.indentCode(fcode,4) + "}\nreturn solutions.GetNumSolutions()>0;\n}\n"
 
         # write other functions
-        for name,functioncode in self.functions.iteritems():
+        for name,functioncode in self.functions.items():
             code += self.indentCode(functioncode,4)
         code += "};\n"
         return code
@@ -892,7 +896,7 @@ IkReal r00 = 0, r11 = 0, r22 = 0;
         fcode += self.generateTree(node.jointtree)
         code += self.indentCode(fcode,4) + "}\nreturn solutions.GetNumSolutions()>0;\n}\n\n"
         # write other functions
-        for name,functioncode in self.functions.iteritems():
+        for name,functioncode in self.functions.items():
             code += self.indentCode(functioncode,4)
         code += "};\n"
         return code
@@ -951,7 +955,7 @@ IkReal r00 = 0, r11 = 0, r22 = 0;
         code += self.indentCode(fcode,4) + "}\nreturn solutions.GetNumSolutions()>0;\n}\n"
 
         # write other functions
-        for name,functioncode in self.functions.iteritems():
+        for name,functioncode in self.functions.items():
             code += self.indentCode(functioncode,4)
         code += "};\n"
         return code
@@ -1429,7 +1433,7 @@ IkReal r00 = 0, r11 = 0, r22 = 0;
     def endCheckZeros(self, node):
         return ''
     def generateFreeParameter(self, node):
-        #print 'free variable ',node.jointname,': ',self.freevars
+        #print('free variable ',node.jointname,': ',self.freevars)
         self.freevars.append(node.jointname)
         self.freevardependencies.append((node.jointname,node.jointname))
         code = 'IkReal %smul = 1;\n%s=0;\n'%(node.jointname,node.jointname)
@@ -1706,7 +1710,7 @@ IkReal r00 = 0, r11 = 0, r22 = 0;
         # actually a lot of time can be wasted in this phase...
         if True:
             return code
-        numspaces /= 4
+        numspaces = int(numspaces/4)
         try:
             return re.sub('\n','\n'+' '*numspaces,s)
         except:
