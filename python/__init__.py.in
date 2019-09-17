@@ -12,6 +12,7 @@
 # limitations under the License. 
 def loadstable(ver):
     return _loadversion('_openravepy_'+ver.replace('.', '_'))
+
 def loadlatest():
     return _loadversion('_openravepy_')
 
@@ -30,7 +31,7 @@ if platform.startswith('win') or system().lower() == 'windows':
     openravepy_currentversion = loadlatest()
 else:
     try:
-        openravepy_currentversion = loadstable(__openravepy_version__)
+        openravepy_currentversion = loadstable('@OPENRAVE_SOVERSION@')
     except (NameError, AttributeError):
         openravepy_currentversion = loadlatest()
 

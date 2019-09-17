@@ -36,7 +36,7 @@ option(OPT_DOUBLE_PRECISION "Use double precision" ON)
 option(OPT_ACCURATEMATH "Use accurate and robust math to account for floating-point errors" ON)
 option(OPT_PYTHON "Build python bindings (first available python)" ON)
 option(OPT_PYTHON2 "Build python3 bindings (force to python2)" OFF)
-option(OPT_PYTHON3 "Build python3 bindings (force to python3)" OFF)
+option(OPT_PYTHON3 "Build python3 bindings (force to python3)" ON)
 option(OPT_OCTAVE "Build octave bindings" ON)
 option(OPT_MATLAB "Build matlab bindings" ON)
 option(OPT_STATIC "Build static libraries" OFF)
@@ -90,13 +90,12 @@ find_package(PkgConfig) # pkg_check_modules
 set(OPENRAVE_PYTHON_INSTALL_DIR)
 
 if( OPT_PYTHON OR OPT_PYTHON2 OR OPT_PYTHON3 )
-  set(PythonInterp_FIND_VERSION_MAJOR 2)
   if( OPT_PYTHON2 )
     set(PythonInterp_FIND_VERSION 1)
     set(PythonInterp_FIND_VERSION_MAJOR 2)
   endif()
   if( OPT_PYTHON3 )
-    set(PythonInterp_FIND_VERSION 1)
+    set(PythonInterp_FIND_VERSION 3)
     set(PythonInterp_FIND_VERSION_MAJOR 3)
   endif()
 
@@ -106,12 +105,19 @@ if( OPT_PYTHON OR OPT_PYTHON2 OR OPT_PYTHON3 )
   
   include(FindPythonInterp)
   ## check python
-  find_package(PythonLibs ${PythonInterp_FIND_VERSION_MAJOR}) # using PYTHON_INCLUDE_PATH instead of PYTHON_INCLUDE_DIRS?
-  if( NOT PYTHON_EXECUTABLE )
-    # look specifically for 2.6
-    find_program(PYTHON_EXECUTABLE NAMES python2.6 python PATHS [HKEY_LOCAL_MACHINE\\SOFTWARE\\Python\\PythonCore\\2.6\\InstallPath])
+  find_package(PythonLibs ${PythonInterp_FIND_VERSION_MAJOR} REQUIRED) # using PYTHON_INCLUDE_PATH instead of PYTHON_INCLUDE_DIRS?
+  #if( NOT PYTHON_EXECUTABLE )
+  #  # look specifically for 2.6
+  #  find_program(PYTHON_EXECUTABLE NAMES python2.6 python PATHS [HKEY_LOCAL_MACHINE\\SOFTWARE\\Python\\PythonCore\\2.6\\InstallPath])
+  #endif()
+
+  if( OPT_PYTHON2 )
+    set(PYTHON_VERSION ${PYTHON_VERSION_MAJOR}${PYTHON_VERSION_MINOR})
   endif()
-  set(PYTHON_VERSION ${PYTHON_VERSION_MAJOR}${PYTHON_VERSION_MINOR})
+  if( OPT_PYTHON3 )
+    set(PYTHON_VERSION ${PYTHON_VERSION_MAJOR})
+  endif()
+  
 
   # back compat?
   if( NOT PYTHON_INCLUDE_DIRS )
@@ -196,7 +202,6 @@ set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib${LIB_SUFFIX}" "${OPENRAVE_P
 #define OPENRAVE_PLUGINS_INSTALL_DIR 
 #define OPENRAVE_DATA_INSTALL_DIR "@CMAKE_INSTALL_PREFIX@/@OPENRAVE_DATA_INSTALL_DIR@"
 #define OPENRAVE_PYTHON_INSTALL_DIR "@CMAKE_INSTALL_PREFIX@/@OPENRAVE_PYTHON_INSTALL_DIR@"
-
 
 message(STATUS "installing to ${CMAKE_INSTALL_PREFIX}, python exe ${PYTHON_EXECUTABLE}, python subdir is ${OPENRAVE_PYTHON_INSTALL_DIR}, program suffix is '${OPENRAVE_BIN_SUFFIX}'")
 
@@ -323,12 +328,22 @@ if(NOT MSVC71 AND NOT MSVC80)
     set(Boost_LIBRARY_DIRS $ENV{BOOST_LIBRARYDIR})
   endif()
   set(Boost_ADDITIONAL_VERSIONS "1.46.1" "1.45" "1.44" "1.43" "1.42" "1.41" "1.40" "1.39" "1.38" "1.37.0" "1.37" "1.35.0" "1.34.1" "1.34.0" "1.34" "1.33.1" "1.33.0" "1.33" ${Boost_ADDITIONAL_VERSIONS})
-  find_package(Boost COMPONENTS regex filesystem system python-py${PYTHON_VERSION} thread iostreams date_time)
-  if(Boost_PYTHON-PY${PYTHON_VERSION}_FOUND)
-    message(STATUS "found boost python${PYTHON_VERSION}")
-    set(Boost_PYTHON_FOUND ${Boost_PYTHON-PY${PYTHON_VERSION}_FOUND})
-    set(Boost_PYTHON_LIBRARY ${Boost_PYTHON-PY${PYTHON_VERSION}_LIBRARY})
+  find_package(Boost COMPONENTS regex filesystem system python3 thread iostreams date_time)
+  
+  if( OPT_PYTHON2 )
+    if(Boost_PYTHON-PY${PYTHON_VERSION}_FOUND)
+      message(STATUS "found boost python${PYTHON_VERSION}")
+      set(Boost_PYTHON_FOUND ${Boost_PYTHON-PY${PYTHON_VERSION}_FOUND})
+      set(Boost_PYTHON_LIBRARY ${Boost_PYTHON-PY${PYTHON_VERSION}_LIBRARY})
+    endif()
   endif()
+  if( OPT_PYTHON3 )
+      message(STATUS "found boost python${PYTHON_VERSION}")
+      set(Boost_PYTHON_FOUND ON)
+      set(Boost_PYTHON_LIBRARY ${Boost_PYTHON3_LIBRARY})
+  endif()
+
+  
 else()
   # have to rely on local boost and a hack
   add_definitions(-DTEMP_SPIRIT_HACK)
@@ -339,11 +354,19 @@ if( Boost_FOUND )
   set(OPENRAVE_LINK_DIRS ${OPENRAVE_LINK_DIRS} ${Boost_LIBRARY_DIRS})
   set(Boost_DATE_TIME_LIBRARY "boost_date_time")
   set(Boost_FILESYSTEM_LIBRARY "boost_filesystem")
-  set(Boost_IOSTREAMS_LIBRARY "boost_iostreams")
-  set(Boost_NUMPY_LIBRARY "boost_numpy")
-  set(Boost_PYTHON_LIBRARY "boost_python")
+  set(Boost_IOSTREAMS_LIBRARY "boost_iostreams")  
   set(Boost_SYSTEM_LIBRARY "boost_system")
   set(Boost_THREAD_LIBRARY "boost_thread")
+  
+  if( OPT_PYTHON2 )
+    set(Boost_NUMPY_LIBRARY "boost_numpy")
+    set(Boost_PYTHON_LIBRARY "boost_python")
+  endif()
+  if( OPT_PYTHON3 )
+    set(Boost_NUMPY_LIBRARY "boost_numpy3")
+    set(Boost_PYTHON_LIBRARY "boost_python3")
+  endif()
+
 elseif(Boost_VERSION AND NOT "${Boost_VERSION}" STREQUAL "0")
   include_directories(${Boost_INCLUDE_DIRS})
   set(OPENRAVE_LINK_DIRS ${OPENRAVE_LINK_DIRS} ${Boost_LIBRARY_DIRS})
@@ -552,7 +575,10 @@ else()
   set(IS_X86_64 0)
 endif()
 
-check_library_exists(rt clock_gettime "" CLOCK_GETTIME_FOUND)
+#check_library_exists(rt clock_gettime "" CLOCK_GETTIME_FOUND) # Causing errors in  ubuntu 18.04
+# python3: Relink `/lib/x86_64-linux-gnu/libsystemd.so.0' with `/lib/x86_64-linux-gnu/librt.so.1' for IFUNC symbol `clock_gettime'
+# python3: Relink `/lib/x86_64-linux-gnu/libudev.so.1' with `/lib/x86_64-linux-gnu/librt.so.1' for IFUNC symbol `clock_gettime'
+
 if( CLOCK_GETTIME_FOUND )
   add_definitions(-DCLOCK_GETTIME_FOUND)
 endif()
@@ -986,7 +1012,7 @@ if(CMAKE_CPACK_COMMAND AND UNIX AND OPT_BUILD_PACKAGES)
   endforeach()
 
   # base
-  set(CPACK_DEBIAN_BUILD_DEPENDS_UBUNTU debhelper cmake python-dev libxml2-dev libboost-dev ffmpeg zlib1g-dev python-numpy "python-sympy (>=0.6.3)" desktop-file-utils libboost-filesystem-dev libboost-system-dev libboost-python-dev libboost-thread-dev libboost-date-time-dev "octave3.2-headers|liboctave-dev" "collada-dom-dev (>=2.4.0)" pkg-config "fparser-dev (>=4.4.3)" libhdf5-serial-dev liblapack-dev gettext)
+  set(CPACK_DEBIAN_BUILD_DEPENDS_UBUNTU debhelper cmake python3-dev libxml2-dev libboost-dev ffmpeg zlib1g-dev python-numpy "python-sympy (>=0.6.3)" desktop-file-utils libboost-filesystem-dev libboost-system-dev libboost-python-dev libboost-thread-dev libboost-date-time-dev "octave3.2-headers|liboctave-dev" "collada-dom-dev (>=2.4.0)" pkg-config "fparser-dev (>=4.4.3)" libhdf5-serial-dev liblapack-dev gettext)
   # add once infinite precision computations are enabled:
   # libmpfr-dev libgmp3-dev libmpfi-dev libgmpxx4ldbl python-gmpy
   # plugins:

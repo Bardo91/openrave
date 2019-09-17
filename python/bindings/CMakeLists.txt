@@ -1,6 +1,6 @@
 if( Boost_PYTHON_FOUND AND Boost_THREAD_FOUND )
   if( PYTHONLIBS_FOUND OR PYTHON_LIBRARIES )
-    add_definitions(${Boost_CFLAGS})
+  add_definitions(${Boost_CFLAGS})
     set(CMAKE_REQUIRED_INCLUDES ${PYTHON_INCLUDE_DIRS} ${Boost_INCLUDE_DIR} ${REQUIRED_INCLUDES})
     # On MacOSX, boost_system also needs to be linked or will output the following errors:
     # Undefined symbols for architecture x86_64:
@@ -45,7 +45,8 @@ if( Boost_PYTHON_FOUND AND Boost_THREAD_FOUND )
       ## openrave bindings
       add_library(openravepy_int SHARED openravepy_kinbody.cpp openravepy_int.cpp openravepy_robot.cpp openravepy_int.h openravepy_global.cpp openravepy_collisionchecker.cpp openravepy_controller.cpp openravepy_ikparameterization.cpp openravepy_iksolver.cpp openravepy_module.cpp openravepy_physicsengine.cpp openravepy_planner.cpp openravepy_planningutils.cpp openravepy_sensor.cpp openravepy_sensorsystem.cpp openravepy_spacesampler.cpp openravepy_trajectory.cpp openravepy_viewer.cpp bindings.cpp bindings.h docstrings.cpp docstrings.h)
       # stdc++ has to be included before opengl libraries due to some ATI bug (http://wiki.fifengine.de/Segfault_in_cxa_allocate_exception#Workaround)
-      target_link_libraries(openravepy_int ${STDC_LIBRARY} libopenrave libopenrave-core ${PYTHON_LIBRARIES} ${Boost_PYTHON_LIBRARY} ${Boost_NUMPY_LIBRARY} ${Boost_THREAD_LIBRARY} ${extralibs})
+      target_link_libraries(openravepy_int ${STDC_LIBRARY} libopenrave libopenrave-core ${Boost_THREAD_LIBRARY} ${extralibs})
+      target_link_libraries(openravepy_int ${PYTHON_LIBRARIES} ${Boost_PYTHON_LIBRARY} ${Boost_NUMPY_LIBRARY})
       add_dependencies(openravepy_int libopenrave libopenrave-core)
       set_target_properties(openravepy_int PROPERTIES PREFIX "" COMPILE_FLAGS "${OPENRAVEPY_COMPILE_FLAGS}")
       if( WIN32 )
@@ -55,7 +56,7 @@ if( Boost_PYTHON_FOUND AND Boost_THREAD_FOUND )
         set_target_properties(openravepy_int PROPERTIES SUFFIX ".so")
       endif()
       install(TARGETS openravepy_int DESTINATION ${OPENRAVEPY_VER_INSTALL_DIR} COMPONENT ${COMPONENT_PREFIX}python)
-
+      
       ## ann bindings
       if( ANN_FOUND )
         add_library(pyANN_int SHARED pyann.cpp bindings.cpp bindings.h)
